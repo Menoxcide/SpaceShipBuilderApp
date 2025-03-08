@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:fitsSystemWindows="true">
+
+    <com.example.spaceshipbuilderapp.GameView
+        android:id="@+id/gameView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/buttonLayout" />
+
+    <LinearLayout
+        android:id="@+id/buttonLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/selectionPanel"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="10dp">
+
+        <Button
+            android:id="@+id/launchButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LAUNCH"
+            android:layout_marginEnd="10dp"
+            android:backgroundTint="#FF00FF"
+            android:textColor="@android:color/white"
+            android:textSize="18sp" />
+
+        <Button
+            android:id="@+id/leaderboardButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LEADERBOARD"
+            android:backgroundTint="#00FFFF"
+            android:textColor="@android:color/white"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/selectionPanel"
+        android:layout_width="match_parent"
+        android:layout_height="150dp"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="@android:color/darker_gray"
+        android:padding="10dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageButton
+                android:id="@+id/cockpitImage"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/cockpit"
+                android:contentDescription="Cockpit"
+                android:scaleType="fitCenter"
+                android:background="?android:attr/selectableItemBackground" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cockpit"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:maxWidth="80dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageButton
+                android:id="@+id/fuelTankImage"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/fuel_tank"
+                android:contentDescription="Fuel Tank"
+                android:scaleType="fitCenter"
+                android:background="?android:attr/selectableItemBackground" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Fuel Tank"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:maxWidth="80dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <ImageButton
+                android:id="@+id/engineImage"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/engine"
+                android:contentDescription="Engine"
+                android:scaleType="fitCenter"
+                android:background="?android:attr/selectableItemBackground" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Engine"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:gravity="center"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:maxWidth="80dp" />
+        </LinearLayout>
+    </LinearLayout>
+</RelativeLayout>
