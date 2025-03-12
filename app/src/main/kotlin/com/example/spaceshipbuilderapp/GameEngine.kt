@@ -90,6 +90,8 @@ class GameEngine @Inject constructor(
     private var speedBoostEndTime = 0L
     private var stealthActive = false
     private var stealthEndTime = 0L
+    var invincibilityActive = false // New invincibility state
+    private var invincibilityEndTime = 0L // New invincibility end time
     private val effectDuration = 10000L
     private var baseFuelConsumption = 0.05f
     private var currentFuelConsumption = baseFuelConsumption
@@ -166,6 +168,10 @@ class GameEngine @Inject constructor(
             stealthActive = false
             Timber.d("Stealth effect ended")
         }
+        if (invincibilityActive && currentTime > invincibilityEndTime) {
+            invincibilityActive = false
+            Timber.d("Invincibility ended")
+        }
 
         fuel -= currentFuelConsumption
         shipX = shipX.coerceIn(maxPartHalfWidth, this.screenWidth - maxPartHalfWidth)
@@ -231,6 +237,11 @@ class GameEngine @Inject constructor(
                         currentScore += 50
                         Timber.d("Star collected, score increased to $currentScore")
                     }
+                    "invincibility" -> {
+                        invincibilityActive = true
+                        invincibilityEndTime = currentTime + effectDuration
+                        Timber.d("Invincibility activated")
+                    }
                 }
                 renderer.particleSystem.addAuraParticles(shipX, shipY, powerUp.type)
                 powerUpsToRemove.add(powerUp)
@@ -244,7 +255,7 @@ class GameEngine @Inject constructor(
                 asteroid.x - asteroid.size, asteroid.y - asteroid.size,
                 asteroid.x + asteroid.size, asteroid.y + asteroid.size
             )
-            if (checkCollision(asteroidRect) && !stealthActive) {
+            if (checkCollision(asteroidRect) && !stealthActive && !invincibilityActive) {
                 hp -= 10f
                 asteroidsToRemove.add(asteroid)
                 renderer.particleSystem.addCollisionParticles(shipX, shipY)
@@ -275,6 +286,7 @@ class GameEngine @Inject constructor(
         shieldActive = false
         speedBoostActive = false
         stealthActive = false
+        invincibilityActive = false // Reset invincibility
         currentFuelConsumption = baseFuelConsumption
         currentSpeed = baseSpeed
     }
@@ -407,7 +419,7 @@ class GameEngine @Inject constructor(
     private fun spawnPowerUp(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star")
+        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility") // Added invincibility
         val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random() // 40% chance for fuel
         powerUps.add(PowerUp(x, y, type))
     }

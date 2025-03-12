@@ -42,6 +42,8 @@ class Renderer @Inject constructor(
         ?: throw IllegalStateException("Star bitmap not found")
     private val asteroidBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
         ?: throw IllegalStateException("Asteroid bitmap not found")
+    private val invincibilityBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon) // Assume you have this resource
+        ?: throw IllegalStateException("Invincibility bitmap not found")
 
     data class Star(
         var x: Float,
@@ -87,6 +89,32 @@ class Renderer @Inject constructor(
         color = Color.WHITE
         style = Paint.Style.STROKE
         strokeWidth = 2f
+    }
+    private val invincibilityAuraPaint = Paint().apply {
+        color = Color.YELLOW
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+
+    // Theme support
+    var currentTheme = "dark"
+
+    fun setTheme(theme: String) {
+        currentTheme = theme
+        updatePaints()
+    }
+
+    private fun updatePaints() {
+        when (currentTheme) {
+            "dark" -> {
+                backgroundPaint.shader = LinearGradient(0f, 0f, 0f, 2400f, Color.parseColor("#1A0B2E"), Color.parseColor("#4B0082"), Shader.TileMode.CLAMP)
+                graffitiPaint.color = Color.parseColor("#FFFFFF")
+            }
+            "neon" -> {
+                backgroundPaint.shader = LinearGradient(0f, 0f, 0f, 2400f, Color.parseColor("#00FF00"), Color.parseColor("#FF00FF"), Shader.TileMode.CLAMP)
+                graffitiPaint.color = Color.parseColor("#000000")
+            }
+        }
     }
 
     val cockpitBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
@@ -184,6 +212,14 @@ class Renderer @Inject constructor(
             val x = shipX - mergedShipBitmap.width / 2f
             val y = shipY - mergedShipBitmap.height / 2f
             canvas.drawBitmap(mergedShipBitmap, x, y, null)
+            if (gameEngine.invincibilityActive) {
+                canvas.drawCircle(
+                    shipX,
+                    shipY,
+                    mergedShipBitmap.width / 2f + 10f,
+                    invincibilityAuraPaint
+                )
+            }
             particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height / 2f)
             particleSystem.drawExhaustParticles(canvas)
             particleSystem.drawCollectionParticles(canvas)
@@ -239,6 +275,7 @@ class Renderer @Inject constructor(
                 "stealth" -> stealthBitmap
                 "warp" -> warpBitmap
                 "star" -> starBitmap
+                "invincibility" -> invincibilityBitmap // Use invincibility bitmap
                 else -> powerUpBitmap
             }
             val x = powerUp.x - bitmap.width / 2f
@@ -292,6 +329,7 @@ class Renderer @Inject constructor(
         if (!warpBitmap.isRecycled) warpBitmap.recycle()
         if (!starBitmap.isRecycled) starBitmap.recycle()
         if (!asteroidBitmap.isRecycled) asteroidBitmap.recycle()
+        if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle() // Recycle invincibility bitmap
         particleSystem.onDestroy()
     }
 }

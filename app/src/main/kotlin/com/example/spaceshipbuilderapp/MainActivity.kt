@@ -195,6 +195,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         handler.post(animationRunnable)
+        setupThemeButton() // Add theme switching setup
     }
 
     private fun showToast(message: String, duration: Int = Toast.LENGTH_SHORT) {
@@ -220,6 +221,26 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.buildView.setOnTouchListener(placedPartTouchListener)
+    }
+
+    private fun setupThemeButton() {
+        val themeButton = Button(this).apply {
+            text = "Switch Theme"
+            layoutParams = android.view.ViewGroup.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            x = 40f
+            y = 200f
+        }
+        binding.root.addView(themeButton)
+
+        themeButton.setOnClickListener {
+            val newTheme = if (binding.buildView.renderer.currentTheme == "dark") "neon" else "dark"
+            binding.buildView.renderer.setTheme(newTheme)
+            binding.flightView.renderer.setTheme(newTheme)
+            Timber.d("Theme switched to $newTheme")
+        }
     }
 
     fun setSelectionPanelVisibility(isVisible: Boolean) {
