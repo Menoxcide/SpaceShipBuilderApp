@@ -8,22 +8,21 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.PorterDuff
+import android.graphics.RectF
 import android.graphics.Shader
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
 import androidx.core.graphics.withSave
 import androidx.core.graphics.withTranslation
 import timber.log.Timber
-import java.util.HashSet
 import javax.inject.Inject
 import kotlin.math.sin
 import kotlin.random.Random
 
 class Renderer @Inject constructor(
     private val context: Context,
-    particleSystem: ParticleSystem
+    val particleSystem: ParticleSystem
 ) {
-    val particleSystem: ParticleSystem = particleSystem
     private val stars = mutableListOf<Star>()
     private var animationFrame = 0f
     private var screenWidth: Float = 0f
@@ -74,6 +73,20 @@ class Renderer @Inject constructor(
     private val asteroidPaint = Paint().apply {
         isAntiAlias = true
         color = Color.RED
+    }
+    private val hpBarPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.GREEN
+    }
+    private val fuelBarPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.BLUE
+    }
+    private val barBorderPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
     }
 
     val cockpitBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
@@ -157,6 +170,7 @@ class Renderer @Inject constructor(
 
     fun drawShip(
         canvas: Canvas,
+        gameEngine: GameEngine,
         shipParts: List<GameEngine.Part>,
         screenWidth: Float,
         screenHeight: Float,
@@ -173,6 +187,27 @@ class Renderer @Inject constructor(
             particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height / 2f)
             particleSystem.drawExhaustParticles(canvas)
             particleSystem.drawCollectionParticles(canvas)
+            particleSystem.drawCollisionParticles(canvas)
+            particleSystem.drawDamageTextParticles(canvas) // Draw damage text
+
+            // Draw HP bar above the ship
+            val barWidth = mergedShipBitmap.width * 0.8f
+            val barHeight = 10f
+            val barX = shipX - barWidth / 2f
+            val hpBarY = y - barHeight - 15f // Adjusted for spacing above ship
+            val fuelBarY = hpBarY + barHeight + 5f // Directly below HP bar
+            val hpFraction = gameEngine.hp / gameEngine.maxHp
+            val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
+            val hpBarFilledWidth = barWidth * hpFraction
+            val fuelBarFilledWidth = barWidth * fuelFraction
+
+            // HP bar
+            canvas.drawRect(barX, hpBarY, barX + barWidth, hpBarY + barHeight, barBorderPaint)
+            canvas.drawRect(barX, hpBarY, barX + hpBarFilledWidth, hpBarY + barHeight, hpBarPaint)
+
+            // Fuel bar
+            canvas.drawRect(barX, fuelBarY, barX + barWidth, fuelBarY + barHeight, barBorderPaint)
+            canvas.drawRect(barX, fuelBarY, barX + fuelBarFilledWidth, fuelBarY + barHeight, fuelBarPaint)
         } else if (gameState == GameState.BUILD && shipParts.isNotEmpty()) {
             val placeholderPositions = placeholders.associate { it.type to it.y }
             shipParts.sortedBy { it.y }.forEach { part ->
@@ -191,7 +226,7 @@ class Renderer @Inject constructor(
                     particleSystem.addPropulsionParticles(shipX, targetY + (part.bitmap.height * part.scale))
                 }
             }
-            particleSystem.drawCollectionParticles(canvas) // Draw celebratory particles in BUILD mode
+            particleSystem.drawCollectionParticles(canvas)
             Timber.d("Drawing ship in BUILD mode with ${shipParts.size} parts")
         }
     }
@@ -228,9 +263,13 @@ class Renderer @Inject constructor(
     fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float) {
         val textHeight = 50f
         val startY = 80f + statusBarHeight
-        canvas.drawText("Level: ${gameEngine.level}", 40f, startY, graffitiPaint)
-        canvas.drawText("Fuel: ${gameEngine.fuel.toInt()}/${gameEngine.fuelCapacity}", 40f, startY + textHeight * 1, graffitiPaint)
-        canvas.drawText("Parts: ${gameEngine.parts.size}/3", 40f, startY + textHeight * 2, graffitiPaint)
+        if (gameEngine.gameState == GameState.FLIGHT) {
+            canvas.drawText("Score: ${gameEngine.currentScore}", 40f, startY, graffitiPaint)
+        } else {
+            canvas.drawText("Level: ${gameEngine.level}", 40f, startY, graffitiPaint)
+            canvas.drawText("Fuel: ${gameEngine.fuel.toInt()}/${gameEngine.fuelCapacity}", 40f, startY + textHeight, graffitiPaint)
+            canvas.drawText("Parts: ${gameEngine.parts.size}/3", 40f, startY + textHeight * 2, graffitiPaint)
+        }
     }
 
     fun clearParticles() {

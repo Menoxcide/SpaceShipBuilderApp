@@ -8,7 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Button
 import android.widget.ImageButton
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -19,8 +21,6 @@ import com.example.spaceshipbuilderapp.databinding.ActivityMainBinding
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import android.app.Dialog
-import android.widget.Button
-import android.widget.TextView
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -32,7 +32,7 @@ class MainActivity : AppCompatActivity() {
     private var isDragging = false
     private var draggedPartType: String? = null
     private val audioPermissionCode = 100
-    private lateinit var highscoreManager: HighscoreManager
+    @Inject lateinit var highscoreManager: HighscoreManager
     private lateinit var buildView: BuildView
     private lateinit var flightView: FlightView
     private val handler = Handler(Looper.getMainLooper())
@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
             flightView.renderer.updateAnimationFrame()
             if (buildView.visibility == View.VISIBLE) buildView.invalidate()
             if (flightView.visibility == View.VISIBLE) flightView.invalidate()
-            handler.postDelayed(this, 16) // Approximately 60 FPS
+            handler.postDelayed(this, 16)
         }
     }
 
@@ -130,7 +130,6 @@ class MainActivity : AppCompatActivity() {
         buildView = binding.buildView
         flightView = binding.flightView
 
-        // Delay initialization of partButtons until after Hilt injection
         buildView.post {
             partButtons = mapOf(
                 binding.cockpitImage to Pair("cockpit", buildView.renderer.cockpitBitmap),
@@ -140,7 +139,6 @@ class MainActivity : AppCompatActivity() {
             setupListeners()
         }
 
-        highscoreManager = HighscoreManager(this)
         setupVoiceCommandHandler()
         requestAudioPermission()
 
@@ -148,12 +146,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.launchButton.visibility = View.GONE
 
-        // Set screen dimensions initially, but wait for statusBarHeight
         val screenWidth = resources.displayMetrics.widthPixels.toFloat()
         val screenHeight = resources.displayMetrics.heightPixels.toFloat()
         gameEngine.setScreenDimensions(screenWidth, screenHeight)
 
-        // Delay placeholder initialization until after statusBarHeight is set
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
             binding.buildView.setStatusBarHeight(statusBarHeight)
@@ -199,7 +195,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Start continuous star animation
         handler.post(animationRunnable)
     }
 
@@ -273,11 +268,47 @@ class MainActivity : AppCompatActivity() {
 
         val highscoreText = dialog.findViewById<TextView>(R.id.highscoreText)
         val closeButton = dialog.findViewById<Button>(R.id.closeButton)
+        val prevButton = dialog.findViewById<Button>(R.id.prevButton) ?: Button(this).apply {
+            id = R.id.prevButton
+            text = "Previous"
+            dialog.findViewById<android.widget.LinearLayout>(android.R.id.content)?.addView(this)
+        }
+        val nextButton = dialog.findViewById<Button>(R.id.nextButton) ?: Button(this).apply {
+            id = R.id.nextButton
+            text = "Next"
+            dialog.findViewById<android.widget.LinearLayout>(android.R.id.content)?.addView(this)
+        }
 
-        highscoreText.text = getString(
-            R.string.leaderboard_text,
-            highscoreManager.getHighscore()
-        )
+        var currentPage = 0
+        val pageSize = 10
+        val totalPages = highscoreManager.getTotalPages(pageSize)
+
+        fun updateLeaderboardText() {
+            val scores = highscoreManager.getHighscores(currentPage, pageSize)
+            val sb = StringBuilder("Leaderboard (Page ${currentPage + 1}/$totalPages):\n")
+            scores.forEachIndexed { index, score ->
+                sb.append("${currentPage * pageSize + index + 1}. $score\n")
+            }
+            highscoreText.text = sb.toString()
+            prevButton.isEnabled = currentPage > 0
+            nextButton.isEnabled = currentPage < totalPages - 1
+        }
+
+        updateLeaderboardText()
+
+        prevButton.setOnClickListener {
+            if (currentPage > 0) {
+                currentPage--
+                updateLeaderboardText()
+            }
+        }
+
+        nextButton.setOnClickListener {
+            if (currentPage < totalPages - 1) {
+                currentPage++
+                updateLeaderboardText()
+            }
+        }
 
         closeButton.setOnClickListener {
             dialog.dismiss()

@@ -37,9 +37,10 @@ object AppModule {
     @Singleton
     fun provideGameEngine(
         @ApplicationContext context: Context,
-        renderer: Renderer
+        renderer: Renderer,
+        highscoreManager: HighscoreManager
     ): GameEngine {
-        return GameEngine(context, renderer)
+        return GameEngine(context, renderer, highscoreManager)
     }
 
     @Provides

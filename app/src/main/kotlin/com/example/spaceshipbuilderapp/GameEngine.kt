@@ -16,7 +16,8 @@ enum class GameState { BUILD, FLIGHT }
 
 class GameEngine @Inject constructor(
     @ApplicationContext private val context: Context,
-    val renderer: Renderer
+    val renderer: Renderer,
+    private val highscoreManager: HighscoreManager
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("SpaceshipBuilder", Context.MODE_PRIVATE)
     var gameState: GameState = GameState.BUILD
@@ -40,6 +41,8 @@ class GameEngine @Inject constructor(
                 )
                 parts.clear()
                 onLaunchListener?.invoke(false)
+                resetPowerUpEffects()
+                currentScore = 0
             }
         }
 
@@ -48,9 +51,12 @@ class GameEngine @Inject constructor(
     var selectedPart: Part? = null
     var fuel = 0f
     var fuelCapacity = 100f
+    var hp = 100f
+    var maxHp = 100f
     var level = 1
     private var onLaunchListener: ((Boolean) -> Unit)? = null
     var onPowerUpCollectedListener: ((Float, Float) -> Unit)? = null
+    var currentScore = 0
 
     var shipX: Float = 0f
     var shipY: Float = 0f
@@ -60,10 +66,11 @@ class GameEngine @Inject constructor(
 
     val powerUps = mutableListOf<PowerUp>()
     val asteroids = mutableListOf<Asteroid>()
-    private val powerUpSpawnRate = 1000L
+    private val powerUpSpawnRate = 1500L
     private val asteroidSpawnRate = 1500L
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
+    private var lastScoreUpdateTime = System.currentTimeMillis()
 
     var screenWidth: Float = 0f
     var screenHeight: Float = 0f
@@ -74,6 +81,18 @@ class GameEngine @Inject constructor(
     var engineY: Float = 0f
 
     private var mediaPlayer: MediaPlayer? = null
+
+    private var shieldActive = false
+    private var shieldEndTime = 0L
+    private var speedBoostActive = false
+    private var speedBoostEndTime = 0L
+    private var stealthActive = false
+    private var stealthEndTime = 0L
+    private val effectDuration = 10000L
+    private var baseFuelConsumption = 0.05f
+    private var currentFuelConsumption = baseFuelConsumption
+    private var baseSpeed = 5f
+    private var currentSpeed = baseSpeed
 
     companion object {
         const val ALIGNMENT_THRESHOLD = 75f
@@ -130,12 +149,31 @@ class GameEngine @Inject constructor(
             this.screenHeight = screenHeight
         }
 
-        fuel -= 0.1f
-        Timber.d("Ship position: (x=$shipX, y=$shipY)")
+        val currentTime = System.currentTimeMillis()
+        if (shieldActive && currentTime > shieldEndTime) {
+            shieldActive = false
+            currentFuelConsumption = baseFuelConsumption
+            Timber.d("Shield effect ended, fuel consumption reset to $currentFuelConsumption")
+        }
+        if (speedBoostActive && currentTime > speedBoostEndTime) {
+            speedBoostActive = false
+            currentSpeed = baseSpeed
+            Timber.d("Speed boost ended, speed reset to $currentSpeed")
+        }
+        if (stealthActive && currentTime > stealthEndTime) {
+            stealthActive = false
+            Timber.d("Stealth effect ended")
+        }
+
+        fuel -= currentFuelConsumption
         shipX = shipX.coerceIn(maxPartHalfWidth, this.screenWidth - maxPartHalfWidth)
         shipY = shipY.coerceIn(totalShipHeight / 2, this.screenHeight - totalShipHeight / 2)
 
-        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastScoreUpdateTime >= 1000) {
+            currentScore += 10
+            lastScoreUpdateTime = currentTime
+        }
+
         if (currentTime - lastPowerUpSpawnTime >= powerUpSpawnRate) {
             spawnPowerUp(this.screenWidth)
             lastPowerUpSpawnTime = currentTime
@@ -160,15 +198,36 @@ class GameEngine @Inject constructor(
             )
             if (checkCollision(powerUpRect)) {
                 when (powerUp.type) {
-                    "power_up" -> fuel = (fuel + 10f).coerceAtMost(fuelCapacity)
-                    "shield" -> {}
-                    "speed" -> {}
-                    "stealth" -> {}
-                    "warp" -> {}
-                    "star" -> {}
+                    "power_up" -> fuel = (fuel + 20f).coerceAtMost(fuelCapacity)
+                    "shield" -> {
+                        shieldActive = true
+                        shieldEndTime = currentTime + effectDuration
+                        currentFuelConsumption = baseFuelConsumption / 2f
+                        Timber.d("Shield activated, fuel consumption reduced to $currentFuelConsumption")
+                    }
+                    "speed" -> {
+                        speedBoostActive = true
+                        speedBoostEndTime = currentTime + effectDuration
+                        currentSpeed = baseSpeed * 2f
+                        Timber.d("Speed boost activated, speed increased to $currentSpeed")
+                    }
+                    "stealth" -> {
+                        stealthActive = true
+                        stealthEndTime = currentTime + effectDuration
+                        Timber.d("Stealth activated")
+                    }
+                    "warp" -> {
+                        shipX = Random.nextFloat() * (this.screenWidth - 2 * maxPartHalfWidth) + maxPartHalfWidth
+                        shipY = Random.nextFloat() * (this.screenHeight - totalShipHeight) + totalShipHeight / 2
+                        Timber.d("Warp activated, ship teleported to (x=$shipX, y=$shipY)")
+                    }
+                    "star" -> {
+                        currentScore += 50
+                        Timber.d("Star collected, score increased to $currentScore")
+                    }
                 }
                 powerUpsToRemove.add(powerUp)
-                Timber.d("Collected power-up, fuel increased to: $fuel")
+                Timber.d("Collected ${powerUp.type} power-up")
                 onPowerUpCollectedListener?.invoke(powerUp.x, powerUp.y)
                 playPowerUpSound()
             }
@@ -178,10 +237,13 @@ class GameEngine @Inject constructor(
                 asteroid.x - 30f, asteroid.y - 30f,
                 asteroid.x + 30f, asteroid.y + 30f
             )
-            if (checkCollision(asteroidRect)) {
-                fuel -= 5f
+            if (checkCollision(asteroidRect) && !stealthActive) {
+                hp -= 10f
                 asteroidsToRemove.add(asteroid)
-                Timber.d("Hit asteroid, fuel decreased to: $fuel")
+                renderer.particleSystem.addCollisionParticles(shipX, shipY) // Center of ship
+                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10) // Floating -10 text
+                playCollisionSound()
+                Timber.d("Hit asteroid, HP decreased to $hp")
             }
         }
         powerUps.removeAll(powerUpsToRemove)
@@ -189,13 +251,25 @@ class GameEngine @Inject constructor(
 
         powerUps.removeAll { it.isExpired(this.screenHeight) }
         asteroids.removeAll { it.isOffScreen(this.screenHeight) }
-        Timber.d("After cleanup: ${powerUps.size} power-ups, ${asteroids.size} asteroids")
+        Timber.d("After cleanup: ${powerUps.size} power-ups, ${asteroids.size} asteroids, HP: $hp, Fuel: $fuel")
 
-        if (fuel <= 0) {
+        if (fuel <= 0 || hp <= 0) {
+            highscoreManager.addScore(currentScore)
             gameState = GameState.BUILD
             powerUps.clear()
             asteroids.clear()
+            resetPowerUpEffects()
+            hp = maxHp
+            fuel = 0f
         }
+    }
+
+    private fun resetPowerUpEffects() {
+        shieldActive = false
+        speedBoostActive = false
+        stealthActive = false
+        currentFuelConsumption = baseFuelConsumption
+        currentSpeed = baseSpeed
     }
 
     private fun checkCollision(rect: RectF): Boolean {
@@ -209,6 +283,7 @@ class GameEngine @Inject constructor(
     fun launchShip(screenWidth: Float, screenHeight: Float): Boolean {
         if (isShipSpaceworthy(screenHeight)) {
             fuel = 50f
+            hp = maxHp
             shipX = screenWidth / 2f
             shipY = screenHeight / 2f
             this.screenWidth = screenWidth
@@ -231,7 +306,6 @@ class GameEngine @Inject constructor(
                 currentY += part.bitmap.height * part.scale
             }
 
-            // Clear parts after creating the merged bitmap
             parts.clear()
             Timber.d("Ship launched: totalShipHeight=$totalShipHeight, maxPartHalfWidth=$maxPartHalfWidth")
             return true
@@ -250,11 +324,17 @@ class GameEngine @Inject constructor(
     }
 
     fun moveShip(direction: Int) {
-        Timber.d("moveShip called with direction=$direction (no action with dragging)")
+        when (direction) {
+            1 -> shipY -= currentSpeed // Up
+            2 -> shipX += currentSpeed // Right
+            3 -> shipY += currentSpeed // Down
+            4 -> shipX -= currentSpeed // Left
+        }
+        Timber.d("Moved ship with speed $currentSpeed to (x=$shipX, y=$shipY)")
     }
 
     fun stopShip() {
-        Timber.d("stopShip called (no action with dragging)")
+        Timber.d("stopShip called (no velocity to stop with dragging)")
     }
 
     fun isShipSpaceworthy(screenHeight: Float): Boolean {
@@ -274,14 +354,6 @@ class GameEngine @Inject constructor(
         val isWithinBuildArea = sortedParts.all { it.y < maxAllowedY }
 
         Timber.d("isShipSpaceworthy: isValidOrder=$isValidOrder, isAlignedY=$isAlignedY, isWithinBuildArea=$isWithinBuildArea")
-        Timber.d("Cockpit alignment: y=${cockpit.y}, target=$cockpitY, diff=${abs(cockpit.y - cockpitY)}")
-        Timber.d("FuelTank alignment: y=${fuelTank.y}, target=$fuelTankY, diff=${abs(fuelTank.y - fuelTankY)}")
-        Timber.d("Engine alignment: y=${engine.y}, target=$engineY, diff=${abs(engine.y - engineY)}")
-        Timber.d("Build area check: maxAllowedY=$maxAllowedY, screenHeight=$screenHeight, statusBarHeight=$statusBarHeight, panelHeight=$PANEL_HEIGHT")
-        sortedParts.forEach { part ->
-            Timber.d("Part ${part.type} y=${part.y}, within build area=${part.y < maxAllowedY}")
-        }
-
         return isValidOrder && isAlignedY && isWithinBuildArea
     }
 
@@ -292,13 +364,10 @@ class GameEngine @Inject constructor(
             sortedParts[0].type != "cockpit" -> "Cockpit must be topmost! Top part: ${sortedParts[0].type}"
             sortedParts[1].type != "fuel_tank" -> "Fuel tank must be middle! Middle part: ${sortedParts[1].type}"
             sortedParts[2].type != "engine" -> "Engine must be bottom! Bottom part: ${sortedParts[2].type}"
-            abs(sortedParts[0].y - cockpitY) > ALIGNMENT_THRESHOLD -> "Misaligned: Cockpit not at placeholder position! Cockpit y=${sortedParts[0].y}, placeholder y=$cockpitY"
-            abs(sortedParts[1].y - fuelTankY) > ALIGNMENT_THRESHOLD -> "Misaligned: Fuel Tank not at placeholder position! Fuel Tank y=${sortedParts[1].y}, placeholder y=$fuelTankY"
-            abs(sortedParts[2].y - engineY) > ALIGNMENT_THRESHOLD -> "Misaligned: Engine not at placeholder position! Engine y=${sortedParts[2].y}, placeholder y=$engineY"
-            sortedParts.any { it.y >= screenHeight - PANEL_HEIGHT - statusBarHeight } -> {
-                val maxAllowedY = screenHeight - PANEL_HEIGHT - statusBarHeight
-                "Parts must be above the panel! Screen height=$screenHeight, panel height=$PANEL_HEIGHT, statusBarHeight=$statusBarHeight, maxAllowedY=$maxAllowedY"
-            }
+            abs(sortedParts[0].y - cockpitY) > ALIGNMENT_THRESHOLD -> "Misaligned: Cockpit not at placeholder position!"
+            abs(sortedParts[1].y - fuelTankY) > ALIGNMENT_THRESHOLD -> "Misaligned: Fuel Tank not at placeholder position!"
+            abs(sortedParts[2].y - engineY) > ALIGNMENT_THRESHOLD -> "Misaligned: Engine not at placeholder position!"
+            sortedParts.any { it.y >= screenHeight - PANEL_HEIGHT - statusBarHeight } -> "Parts must be above the panel!"
             else -> "Unknown failure!"
         }
     }
@@ -326,7 +395,7 @@ class GameEngine @Inject constructor(
         val x = Random.nextFloat() * screenWidth
         val y = 0f
         val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star")
-        val type = types.random()
+        val type = if (Random.nextFloat() < 0.5f) "power_up" else types.random()
         powerUps.add(PowerUp(x, y, type))
     }
 
@@ -344,6 +413,22 @@ class GameEngine @Inject constructor(
             mediaPlayer?.setOnCompletionListener { it.release() }
         } catch (e: Exception) {
             Timber.e(e, "Failed to play power-up sound")
+        }
+    }
+
+    private fun playCollisionSound() {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(context, R.raw.x)
+            if (mediaPlayer != null) {
+                mediaPlayer?.start()
+                mediaPlayer?.setOnCompletionListener { it.release() }
+                Timber.d("Playing asteroid_hit sound")
+            } else {
+                Timber.e("Failed to create MediaPlayer for asteroid_hit")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to play collision sound")
         }
     }
 
