@@ -2,7 +2,10 @@ package com.example.spaceshipbuilderapp
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageButton
@@ -12,8 +15,6 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import com.example.spaceshipbuilderapp.BuildConfig
-import com.example.spaceshipbuilderapp.GameEngine.Part
 import com.example.spaceshipbuilderapp.databinding.ActivityMainBinding
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
@@ -34,19 +35,23 @@ class MainActivity : AppCompatActivity() {
     private lateinit var highscoreManager: HighscoreManager
     private lateinit var buildView: BuildView
     private lateinit var flightView: FlightView
+    private val handler = Handler(Looper.getMainLooper())
+    private val animationRunnable = object : Runnable {
+        override fun run() {
+            buildView.renderer.updateAnimationFrame()
+            flightView.renderer.updateAnimationFrame()
+            if (buildView.visibility == View.VISIBLE) buildView.invalidate()
+            if (flightView.visibility == View.VISIBLE) flightView.invalidate()
+            handler.postDelayed(this, 16) // Approximately 60 FPS
+        }
+    }
 
     @Inject lateinit var gameEngine: GameEngine
 
-    private val partButtons by lazy {
-        mapOf(
-            binding.cockpitImage to Pair("cockpit", buildView.cockpitBitmap),
-            binding.fuelTankImage to Pair("fuel_tank", buildView.fuelTankBitmap),
-            binding.engineImage to Pair("engine", buildView.engineBitmap)
-        )
-    }
+    private lateinit var partButtons: Map<ImageButton, Pair<String, Bitmap>>
 
     private val partTouchListener = View.OnTouchListener { view, event ->
-        if (gameEngine.gameState != GameState.BUILD) return@OnTouchListener false
+        if (gameState != GameState.BUILD) return@OnTouchListener false
         val (partType, bitmap) = partButtons[view as ImageButton] ?: return@OnTouchListener false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -56,7 +61,7 @@ class MainActivity : AppCompatActivity() {
                 initialY = location[1].toFloat() + (view.height / 2f)
                 isDragging = true
                 draggedPartType = partType
-                buildView.setSelectedPart(Part(partType, bitmap, initialX, initialY, 0f))
+                buildView.setSelectedPart(GameEngine.Part(partType, bitmap, initialX, initialY, 0f, 1f))
                 if (BuildConfig.DEBUG) Timber.d("$partType selected at (x=$initialX, y=$initialY)")
                 true
             }
@@ -64,21 +69,18 @@ class MainActivity : AppCompatActivity() {
                 if (isDragging) {
                     val x = event.rawX
                     val y = event.rawY
-                    buildView.setSelectedPart(Part(partType, bitmap, x, y, 0f))
+                    buildView.setSelectedPart(GameEngine.Part(partType, bitmap, x, y, 0f, 1f))
                     if (BuildConfig.DEBUG) Timber.d("Dragging $partType to (x=$x, y=$y)")
                 }
                 true
             }
             MotionEvent.ACTION_UP -> {
                 if (isDragging) {
-                    val x = event.rawX
-                    val y = event.rawY
-                    buildView.setSelectedPart(Part(partType, bitmap, x, y, 0f))
                     isDragging = false
                     draggedPartType = null
                     view.visibility = View.VISIBLE
                     view.performClick()
-                    if (BuildConfig.DEBUG) Timber.d("Dropped $partType at (x=$x, y=$y)")
+                    if (BuildConfig.DEBUG) Timber.d("Dropped $partType handling delegated to BuildView")
                 }
                 true
             }
@@ -87,7 +89,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val placedPartTouchListener = View.OnTouchListener { view, event ->
-        if (gameEngine.gameState != GameState.BUILD) return@OnTouchListener false
+        if (gameState != GameState.BUILD) return@OnTouchListener false
         val part = buildView.gameEngine.parts.find { it.type == draggedPartType }
         if (part == null || !isDragging) return@OnTouchListener false
         when (event.actionMasked) {
@@ -100,14 +102,14 @@ class MainActivity : AppCompatActivity() {
             MotionEvent.ACTION_MOVE -> {
                 val x = event.rawX
                 val y = event.rawY
-                buildView.setSelectedPart(Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
+                buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
                 if (BuildConfig.DEBUG) Timber.d("Dragging placed $draggedPartType to (x=$x, y=$y)")
                 true
             }
             MotionEvent.ACTION_UP -> {
                 val x = event.rawX
                 val y = event.rawY
-                buildView.setSelectedPart(Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
+                buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
                 isDragging = false
                 draggedPartType = null
                 view.performClick()
@@ -125,42 +127,80 @@ class MainActivity : AppCompatActivity() {
 
         if (BuildConfig.DEBUG) Timber.d("View layout initialized")
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-            val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
-            buildView.setStatusBarHeight(statusBarHeight)
-            flightView.setStatusBarHeight(statusBarHeight)
-            WindowInsetsCompat.CONSUMED
-        }
-
-        // Initialize views from XML
         buildView = binding.buildView
         flightView = binding.flightView
 
+        // Delay initialization of partButtons until after Hilt injection
+        buildView.post {
+            partButtons = mapOf(
+                binding.cockpitImage to Pair("cockpit", buildView.renderer.cockpitBitmap),
+                binding.fuelTankImage to Pair("fuel_tank", buildView.renderer.fuelTankBitmap),
+                binding.engineImage to Pair("engine", buildView.renderer.engineBitmap)
+            )
+            setupListeners()
+        }
+
         highscoreManager = HighscoreManager(this)
         setupVoiceCommandHandler()
-        setupListeners()
         requestAudioPermission()
 
         buildView.setOnTouchListener(placedPartTouchListener)
 
         binding.launchButton.visibility = View.GONE
+
+        // Set screen dimensions initially, but wait for statusBarHeight
+        val screenWidth = resources.displayMetrics.widthPixels.toFloat()
+        val screenHeight = resources.displayMetrics.heightPixels.toFloat()
+        gameEngine.setScreenDimensions(screenWidth, screenHeight)
+
+        // Delay placeholder initialization until after statusBarHeight is set
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
+            binding.buildView.setStatusBarHeight(statusBarHeight)
+            binding.flightView.setStatusBarHeight(statusBarHeight)
+            gameEngine.setScreenDimensions(screenWidth, screenHeight, statusBarHeight)
+            gameEngine.initializePlaceholders(
+                screenWidth, screenHeight,
+                gameEngine.renderer.cockpitPlaceholderBitmap,
+                gameEngine.renderer.fuelTankPlaceholderBitmap,
+                gameEngine.renderer.enginePlaceholderBitmap,
+                statusBarHeight
+            )
+            gameEngine.parts.clear()
+            Timber.d("Initialized with no parts after insets: cockpitY=${gameEngine.cockpitY}, fuelTankY=${gameEngine.fuelTankY}, engineY=${gameEngine.engineY}")
+            setLaunchButtonVisibility(false)
+            WindowInsetsCompat.CONSUMED
+        }
+
         gameEngine.setLaunchListener { isLaunching ->
             setGameMode(if (isLaunching) GameState.FLIGHT else GameState.BUILD)
             binding.selectionPanel.visibility = if (isLaunching) View.GONE else View.VISIBLE
-            buildView.visibility = if (!isLaunching) View.VISIBLE else View.GONE
-            flightView.visibility = if (isLaunching) View.VISIBLE else View.GONE
-            buildView.isEnabled = !isLaunching
-            flightView.isEnabled = isLaunching
+            binding.buildView.visibility = if (!isLaunching) View.VISIBLE else View.GONE
+            binding.buildView.isEnabled = !isLaunching
+            binding.flightView.visibility = if (isLaunching) View.VISIBLE else View.GONE
+            binding.flightView.isEnabled = isLaunching
             if (isLaunching) {
-                flightView.requestFocus()
-                flightView.postInvalidate()
-                if (BuildConfig.DEBUG) Timber.d("FlightView focused: ${flightView.isFocused}, invalidated")
+                binding.flightView.requestFocus()
+                binding.flightView.setGameMode(GameState.FLIGHT)
+                binding.flightView.postInvalidate()
+                if (BuildConfig.DEBUG) Timber.d("FlightView focused: ${binding.flightView.isFocused}, invalidated")
             } else {
-                buildView.setOnTouchListener(placedPartTouchListener)
-                if (BuildConfig.DEBUG) Timber.d("BuildView focused: ${buildView.isFocused}")
+                binding.buildView.setOnTouchListener(placedPartTouchListener)
+                binding.flightView.setGameMode(GameState.BUILD)
+                if (BuildConfig.DEBUG) Timber.d("BuildView focused: ${binding.buildView.isFocused}")
             }
-            setLaunchButtonVisibility(gameEngine.isShipInCorrectOrder() && gameEngine.parts.size == 3 && !isLaunching)
+            val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && gameEngine.parts.size == 3 && !isLaunching
+            setLaunchButtonVisibility(isLaunchReady)
+            if (BuildConfig.DEBUG) {
+                Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${gameEngine.parts.size}, isLaunching=$isLaunching")
+                if (!isLaunchReady) {
+                    Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason()}")
+                }
+            }
         }
+
+        // Start continuous star animation
+        handler.post(animationRunnable)
     }
 
     private fun setupVoiceCommandHandler() {
@@ -181,14 +221,14 @@ class MainActivity : AppCompatActivity() {
     private fun processVoiceCommand(command: String) {
         when (command) {
             "launch ship" -> {
-                val success = buildView.launchShip()
+                val success = binding.buildView.launchShip()
                 if (!success) {
-                    showToast(buildView.gameEngine.getSpaceworthinessFailureReason(), Toast.LENGTH_LONG)
+                    showToast(binding.buildView.gameEngine.getSpaceworthinessFailureReason(), Toast.LENGTH_LONG)
                 }
             }
-            "rotate engine" -> buildView.rotatePart("engine")
-            "rotate cockpit" -> buildView.rotatePart("cockpit")
-            "rotate fuel tank" -> buildView.rotatePart("fuel_tank")
+            "rotate engine" -> binding.buildView.rotatePart("engine")
+            "rotate cockpit" -> binding.buildView.rotatePart("cockpit")
+            "rotate fuel tank" -> binding.buildView.rotatePart("fuel_tank")
             else -> {
                 if (BuildConfig.DEBUG) Timber.d("Unknown command: $command")
                 showToast("Command '$command' not recognized. Try 'launch ship' or 'rotate [part]'.", Toast.LENGTH_SHORT)
@@ -199,9 +239,9 @@ class MainActivity : AppCompatActivity() {
     private fun setupListeners() {
         binding.launchButton.setOnClickListener {
             if (BuildConfig.DEBUG) Timber.d("Launch button clicked")
-            val success = buildView.launchShip()
+            val success = binding.buildView.launchShip()
             if (!success) {
-                showToast(buildView.gameEngine.getSpaceworthinessFailureReason(), Toast.LENGTH_LONG)
+                showToast(binding.buildView.gameEngine.getSpaceworthinessFailureReason(), Toast.LENGTH_LONG)
             }
         }
 
@@ -210,9 +250,11 @@ class MainActivity : AppCompatActivity() {
             showLeaderboard()
         }
 
-        partButtons.keys.forEach { it.setOnTouchListener(partTouchListener) }
+        partButtons.forEach { (button, _) ->
+            button.setOnTouchListener(partTouchListener)
+        }
 
-        buildView.setOnTouchListener(placedPartTouchListener)
+        binding.buildView.setOnTouchListener(placedPartTouchListener)
     }
 
     fun setSelectionPanelVisibility(isVisible: Boolean) {
@@ -221,6 +263,7 @@ class MainActivity : AppCompatActivity() {
 
     fun setLaunchButtonVisibility(isVisible: Boolean) {
         binding.launchButton.visibility = if (isVisible) View.VISIBLE else View.GONE
+        if (BuildConfig.DEBUG) Timber.d("Launch button visibility explicitly set to $isVisible")
     }
 
     fun showLeaderboard() {
@@ -275,17 +318,24 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (::voiceCommandHandler.isInitialized) voiceCommandHandler.stopListening()
+        handler.removeCallbacks(animationRunnable)
+        gameEngine.onDestroy()
         if (BuildConfig.DEBUG) Timber.d("Activity destroyed, voice command handler stopped")
     }
 
     private fun setGameMode(mode: GameState) {
+        gameEngine.gameState = mode
         if (mode == GameState.FLIGHT) {
-            flightView.setGameMode(GameState.FLIGHT)
-            flightView.postInvalidate()
-            Timber.d("Set game mode to FLIGHT, flightView visibility=${flightView.visibility}")
+            binding.flightView.setGameMode(GameState.FLIGHT)
+            binding.flightView.postInvalidate()
+            Timber.d("Set game mode to FLIGHT, flightView visibility=${binding.flightView.visibility}")
         } else {
-            flightView.setGameMode(GameState.BUILD)
-            Timber.d("Set game mode to BUILD, flightView visibility=${flightView.visibility}")
+            binding.flightView.setGameMode(GameState.BUILD)
+            binding.buildView.invalidate()
+            Timber.d("Set game mode to BUILD, flightView visibility=${binding.flightView.visibility}")
         }
     }
+
+    private val gameState: GameState
+        get() = gameEngine.gameState
 }

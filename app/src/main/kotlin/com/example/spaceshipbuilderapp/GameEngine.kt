@@ -3,6 +3,9 @@ package com.example.spaceshipbuilderapp
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.RectF
+import android.media.MediaPlayer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
@@ -13,10 +16,33 @@ enum class GameState { BUILD, FLIGHT }
 
 class GameEngine @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val renderer: Renderer
+    val renderer: Renderer
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("SpaceshipBuilder", Context.MODE_PRIVATE)
-    var gameState = GameState.BUILD
+    var gameState: GameState = GameState.BUILD
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value == GameState.FLIGHT) {
+                onLaunchListener?.invoke(true)
+            } else {
+                mergedShipBitmap?.recycle()
+                mergedShipBitmap = null
+                shipX = screenWidth / 2f
+                shipY = screenHeight / 2f
+                initializePlaceholders(
+                    screenWidth,
+                    screenHeight,
+                    renderer.cockpitPlaceholderBitmap,
+                    renderer.fuelTankPlaceholderBitmap,
+                    renderer.enginePlaceholderBitmap,
+                    statusBarHeight
+                )
+                parts.clear()
+                onLaunchListener?.invoke(false)
+            }
+        }
+
     val parts = mutableListOf<Part>()
     val placeholders = mutableListOf<Part>()
     var selectedPart: Part? = null
@@ -24,14 +50,13 @@ class GameEngine @Inject constructor(
     var fuelCapacity = 100f
     var level = 1
     private var onLaunchListener: ((Boolean) -> Unit)? = null
+    var onPowerUpCollectedListener: ((Float, Float) -> Unit)? = null
 
     var shipX: Float = 0f
     var shipY: Float = 0f
-    private var shipVelocityX: Float = 0f
-    private var shipVelocityY: Float = 0f
-    private val moveSpeed = 5f
-    private val shipHalfWidth = renderer.cockpitBitmap.width * 0.5f / 2f
-    private val shipHalfHeight = renderer.cockpitBitmap.height * 0.5f / 2f
+    var totalShipHeight: Float = 0f
+    var maxPartHalfWidth: Float = 0f
+    var mergedShipBitmap: Bitmap? = null
 
     val powerUps = mutableListOf<PowerUp>()
     val asteroids = mutableListOf<Asteroid>()
@@ -40,15 +65,18 @@ class GameEngine @Inject constructor(
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
 
-    private var screenWidth: Float = 0f
-    private var screenHeight: Float = 0f
+    var screenWidth: Float = 0f
+    var screenHeight: Float = 0f
+    var statusBarHeight: Float = 0f
 
-    private var cockpitY: Float = 0f
-    private var fuelTankY: Float = 0f
-    private var engineY: Float = 0f
+    var cockpitY: Float = 0f
+    var fuelTankY: Float = 0f
+    var engineY: Float = 0f
+
+    private var mediaPlayer: MediaPlayer? = null
 
     companion object {
-        const val ALIGNMENT_THRESHOLD = 50f // Relaxed from 20f to 50f
+        const val ALIGNMENT_THRESHOLD = 75f
         const val PANEL_HEIGHT = 150f
     }
 
@@ -56,10 +84,11 @@ class GameEngine @Inject constructor(
         loadPersistentData()
     }
 
-    fun setScreenDimensions(width: Float, height: Float) {
+    fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float = this.statusBarHeight) {
         screenWidth = width
         screenHeight = height
-        Timber.d("GameEngine screen dimensions set: width=$screenWidth, height=$screenHeight")
+        this.statusBarHeight = statusBarHeight
+        Timber.d("GameEngine screen dimensions set: width=$screenWidth, height=$screenHeight, statusBarHeight=$statusBarHeight")
     }
 
     fun initializePlaceholders(
@@ -67,24 +96,26 @@ class GameEngine @Inject constructor(
         screenHeight: Float,
         cockpitPlaceholderBitmap: Bitmap,
         fuelTankPlaceholderBitmap: Bitmap,
-        enginePlaceholderBitmap: Bitmap
+        enginePlaceholderBitmap: Bitmap,
+        statusBarHeight: Float = this.statusBarHeight
     ) {
+        val contentHeight = screenHeight - statusBarHeight - PANEL_HEIGHT
         val cockpitHeight = renderer.cockpitBitmap.height.toFloat()
         val fuelTankHeight = renderer.fuelTankBitmap.height.toFloat()
         val engineHeight = renderer.engineBitmap.height.toFloat()
 
         val totalHeight = cockpitHeight + fuelTankHeight + engineHeight
-        cockpitY = screenHeight / 2
-        fuelTankY = (cockpitY + cockpitHeight) - 12
-        engineY = (fuelTankY + fuelTankHeight) - 30
+        val startY = statusBarHeight + (contentHeight - totalHeight) / 2f
+
+        cockpitY = startY + cockpitHeight / 2f
+        fuelTankY = cockpitY + cockpitHeight / 2f + fuelTankHeight / 2f
+        engineY = fuelTankY + fuelTankHeight / 2f + engineHeight / 2f
 
         placeholders.clear()
-        placeholders.add(Part("cockpit", cockpitPlaceholderBitmap, screenWidth / 2, cockpitY, 0f))
-        placeholders.add(Part("fuel_tank", fuelTankPlaceholderBitmap, screenWidth / 2, fuelTankY, 0f))
-        placeholders.add(Part("engine", enginePlaceholderBitmap, screenWidth / 2, engineY, 0f))
-        Timber.d("Cockpit Height: $cockpitHeight -> $cockpitY")
-        Timber.d("Fuel Tank Height: $fuelTankHeight -> $fuelTankY")
-        Timber.d("Engine Height: $engineHeight -> $engineY")
+        placeholders.add(Part("cockpit", cockpitPlaceholderBitmap, screenWidth / 2f, cockpitY, 0f, 1f))
+        placeholders.add(Part("fuel_tank", fuelTankPlaceholderBitmap, screenWidth / 2f, fuelTankY, 0f, 1f))
+        placeholders.add(Part("engine", enginePlaceholderBitmap, screenWidth / 2f, engineY, 0f, 1f))
+        Timber.d("Placeholders initialized: cockpitY=$cockpitY, fuelTankY=$fuelTankY, engineY=$engineY")
     }
 
     fun update(screenWidth: Float, screenHeight: Float) {
@@ -100,11 +131,9 @@ class GameEngine @Inject constructor(
         }
 
         fuel -= 0.1f
-        shipX += shipVelocityX
-        shipY += shipVelocityY
-        Timber.d("Ship position updated: (x=$shipX, y=$shipY)")
-        shipX = shipX.coerceIn(0f + shipHalfWidth, this.screenWidth - shipHalfWidth)
-        shipY = shipY.coerceIn(0f + shipHalfHeight, this.screenHeight - shipHalfHeight)
+        Timber.d("Ship position: (x=$shipX, y=$shipY)")
+        shipX = shipX.coerceIn(maxPartHalfWidth, this.screenWidth - maxPartHalfWidth)
+        shipY = shipY.coerceIn(totalShipHeight / 2, this.screenHeight - totalShipHeight / 2)
 
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastPowerUpSpawnTime >= powerUpSpawnRate) {
@@ -119,30 +148,33 @@ class GameEngine @Inject constructor(
             Timber.d("Spawned asteroid at time: $currentTime, count: ${asteroids.size}")
         }
 
-        powerUps.forEach {
-            it.update(this.screenHeight)
-            Timber.d("Power-up position: (x=${it.x}, y=${it.y})")
-        }
-        asteroids.forEach {
-            it.update(this.screenHeight)
-            Timber.d("Asteroid position: (x=${it.x}, y=${it.y})")
-        }
+        powerUps.forEach { it.update(this.screenHeight) }
+        asteroids.forEach { it.update(this.screenHeight) }
 
         val powerUpsToRemove = mutableListOf<PowerUp>()
         val asteroidsToRemove = mutableListOf<Asteroid>()
         for (powerUp in powerUps) {
-            val powerUpRect = android.graphics.RectF(
+            val powerUpRect = RectF(
                 powerUp.x - 20f, powerUp.y - 20f,
                 powerUp.x + 20f, powerUp.y + 20f
             )
             if (checkCollision(powerUpRect)) {
-                fuel = (fuel + 10f).coerceAtMost(fuelCapacity)
+                when (powerUp.type) {
+                    "power_up" -> fuel = (fuel + 10f).coerceAtMost(fuelCapacity)
+                    "shield" -> {}
+                    "speed" -> {}
+                    "stealth" -> {}
+                    "warp" -> {}
+                    "star" -> {}
+                }
                 powerUpsToRemove.add(powerUp)
                 Timber.d("Collected power-up, fuel increased to: $fuel")
+                onPowerUpCollectedListener?.invoke(powerUp.x, powerUp.y)
+                playPowerUpSound()
             }
         }
         for (asteroid in asteroids) {
-            val asteroidRect = android.graphics.RectF(
+            val asteroidRect = RectF(
                 asteroid.x - 30f, asteroid.y - 30f,
                 asteroid.x + 30f, asteroid.y + 30f
             )
@@ -161,32 +193,47 @@ class GameEngine @Inject constructor(
 
         if (fuel <= 0) {
             gameState = GameState.BUILD
-            onLaunchListener?.invoke(false)
             powerUps.clear()
             asteroids.clear()
-            shipVelocityX = 0f
-            shipVelocityY = 0f
         }
     }
 
-    private fun checkCollision(rect: android.graphics.RectF): Boolean {
-        val shipRect = android.graphics.RectF(
-            shipX - shipHalfWidth, shipY - shipHalfHeight,
-            shipX + shipHalfWidth, shipY + shipHalfHeight
+    private fun checkCollision(rect: RectF): Boolean {
+        val shipRect = RectF(
+            shipX - maxPartHalfWidth, shipY - totalShipHeight / 2,
+            shipX + maxPartHalfWidth, shipY + totalShipHeight / 2
         )
         return shipRect.intersect(rect)
     }
 
     fun launchShip(screenWidth: Float, screenHeight: Float): Boolean {
         if (isShipSpaceworthy(screenHeight)) {
-            gameState = GameState.FLIGHT
             fuel = 50f
-            shipX = screenWidth / 2
-            shipY = screenHeight / 2
+            shipX = screenWidth / 2f
+            shipY = screenHeight / 2f
             this.screenWidth = screenWidth
             this.screenHeight = screenHeight
-            onLaunchListener?.invoke(true)
-            Timber.d("Ship launched successfully with fuel: $fuel")
+
+            val sortedParts = parts.sortedBy { it.y }
+            totalShipHeight = sortedParts.sumOf { (it.bitmap.height * it.scale).toDouble() }.toFloat()
+            maxPartHalfWidth = sortedParts.maxOf { (it.bitmap.width * it.scale) / 2f }
+            val maxWidth = sortedParts.maxOf { (it.bitmap.width * it.scale).toInt() }
+            mergedShipBitmap?.recycle()
+            mergedShipBitmap = Bitmap.createBitmap(maxWidth, totalShipHeight.toInt(), Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(mergedShipBitmap!!)
+            var currentY = 0f
+            sortedParts.forEach { part ->
+                val xOffset = (maxWidth - part.bitmap.width * part.scale) / 2f
+                canvas.save()
+                canvas.rotate(part.rotation, xOffset + (part.bitmap.width * part.scale) / 2f, currentY + (part.bitmap.height * part.scale) / 2f)
+                canvas.drawBitmap(part.bitmap, xOffset, currentY, null)
+                canvas.restore()
+                currentY += part.bitmap.height * part.scale
+            }
+
+            // Clear parts after creating the merged bitmap
+            parts.clear()
+            Timber.d("Ship launched: totalShipHeight=$totalShipHeight, maxPartHalfWidth=$maxPartHalfWidth")
             return true
         } else {
             val reason = getSpaceworthinessFailureReason()
@@ -203,33 +250,38 @@ class GameEngine @Inject constructor(
     }
 
     fun moveShip(direction: Int) {
-        when (direction) {
-            0 -> shipVelocityY = -moveSpeed // Up
-            1 -> shipVelocityY = moveSpeed // Down
-            2 -> shipVelocityX = -moveSpeed // Left
-            3 -> shipVelocityX = moveSpeed // Right
-        }
-        Timber.d("Moving ship: velocityX=$shipVelocityX, velocityY=$shipVelocityY")
+        Timber.d("moveShip called with direction=$direction (no action with dragging)")
     }
 
     fun stopShip() {
-        shipVelocityX = 0f
-        shipVelocityY = 0f
-        Timber.d("Stopped ship: velocityX=$shipVelocityX, velocityY=$shipVelocityY")
+        Timber.d("stopShip called (no action with dragging)")
     }
 
-    public fun isShipSpaceworthy(screenHeight: Float): Boolean {
-        if (parts.size != 3) return false
+    fun isShipSpaceworthy(screenHeight: Float): Boolean {
+        if (parts.size != 3) {
+            Timber.d("isShipSpaceworthy failed: parts.size=${parts.size}, expected 3")
+            return false
+        }
         val sortedParts = parts.sortedBy { it.y }
         val cockpit = sortedParts[0]
         val fuelTank = sortedParts[1]
         val engine = sortedParts[2]
         val isValidOrder = cockpit.type == "cockpit" && fuelTank.type == "fuel_tank" && engine.type == "engine"
-        val isAlignedY = abs(cockpit.y - cockpitY) < ALIGNMENT_THRESHOLD &&
-                abs(fuelTank.y - fuelTankY) < ALIGNMENT_THRESHOLD &&
-                abs(engine.y - engineY) < ALIGNMENT_THRESHOLD
-        val isWithinBuildArea = sortedParts.all { it.y < screenHeight - PANEL_HEIGHT }
+        val isAlignedY = abs(cockpit.y - cockpitY) <= ALIGNMENT_THRESHOLD &&
+                abs(fuelTank.y - fuelTankY) <= ALIGNMENT_THRESHOLD &&
+                abs(engine.y - engineY) <= ALIGNMENT_THRESHOLD
+        val maxAllowedY = screenHeight - PANEL_HEIGHT - statusBarHeight
+        val isWithinBuildArea = sortedParts.all { it.y < maxAllowedY }
+
         Timber.d("isShipSpaceworthy: isValidOrder=$isValidOrder, isAlignedY=$isAlignedY, isWithinBuildArea=$isWithinBuildArea")
+        Timber.d("Cockpit alignment: y=${cockpit.y}, target=$cockpitY, diff=${abs(cockpit.y - cockpitY)}")
+        Timber.d("FuelTank alignment: y=${fuelTank.y}, target=$fuelTankY, diff=${abs(fuelTank.y - fuelTankY)}")
+        Timber.d("Engine alignment: y=${engine.y}, target=$engineY, diff=${abs(engine.y - engineY)}")
+        Timber.d("Build area check: maxAllowedY=$maxAllowedY, screenHeight=$screenHeight, statusBarHeight=$statusBarHeight, panelHeight=$PANEL_HEIGHT")
+        sortedParts.forEach { part ->
+            Timber.d("Part ${part.type} y=${part.y}, within build area=${part.y < maxAllowedY}")
+        }
+
         return isValidOrder && isAlignedY && isWithinBuildArea
     }
 
@@ -240,10 +292,13 @@ class GameEngine @Inject constructor(
             sortedParts[0].type != "cockpit" -> "Cockpit must be topmost! Top part: ${sortedParts[0].type}"
             sortedParts[1].type != "fuel_tank" -> "Fuel tank must be middle! Middle part: ${sortedParts[1].type}"
             sortedParts[2].type != "engine" -> "Engine must be bottom! Bottom part: ${sortedParts[2].type}"
-            abs(sortedParts[0].y - cockpitY) > ALIGNMENT_THRESHOLD -> "Misaligned: Cockpit not at placeholder position! Cockpit y=${sortedParts[0].y}, placeholder y=$cockpitY, threshold=$ALIGNMENT_THRESHOLD"
-            abs(sortedParts[1].y - fuelTankY) > ALIGNMENT_THRESHOLD -> "Misaligned: Fuel Tank not at placeholder position! Fuel Tank y=${sortedParts[1].y}, placeholder y=$fuelTankY, threshold=$ALIGNMENT_THRESHOLD"
-            abs(sortedParts[2].y - engineY) > ALIGNMENT_THRESHOLD -> "Misaligned: Engine not at placeholder position! Engine y=${sortedParts[2].y}, placeholder y=$engineY, threshold=$ALIGNMENT_THRESHOLD"
-            sortedParts.any { it.y >= screenHeight - PANEL_HEIGHT } -> "Parts must be above the panel! Screen height=$screenHeight, panel height=$PANEL_HEIGHT"
+            abs(sortedParts[0].y - cockpitY) > ALIGNMENT_THRESHOLD -> "Misaligned: Cockpit not at placeholder position! Cockpit y=${sortedParts[0].y}, placeholder y=$cockpitY"
+            abs(sortedParts[1].y - fuelTankY) > ALIGNMENT_THRESHOLD -> "Misaligned: Fuel Tank not at placeholder position! Fuel Tank y=${sortedParts[1].y}, placeholder y=$fuelTankY"
+            abs(sortedParts[2].y - engineY) > ALIGNMENT_THRESHOLD -> "Misaligned: Engine not at placeholder position! Engine y=${sortedParts[2].y}, placeholder y=$engineY"
+            sortedParts.any { it.y >= screenHeight - PANEL_HEIGHT - statusBarHeight } -> {
+                val maxAllowedY = screenHeight - PANEL_HEIGHT - statusBarHeight
+                "Parts must be above the panel! Screen height=$screenHeight, panel height=$PANEL_HEIGHT, statusBarHeight=$statusBarHeight, maxAllowedY=$maxAllowedY"
+            }
             else -> "Unknown failure!"
         }
     }
@@ -256,26 +311,48 @@ class GameEngine @Inject constructor(
                 sortedParts[2].type == "engine"
     }
 
-    private fun loadPersistentData() {
-        // Highscore logic moved to HighscoreManager
-    }
+    private fun loadPersistentData() {}
 
     fun setLaunchListener(listener: (Boolean) -> Unit) {
         onLaunchListener = listener
     }
 
+    fun notifyLaunchListener() {
+        onLaunchListener?.invoke(gameState == GameState.FLIGHT)
+        Timber.d("Notified launch listener, isLaunching=${gameState == GameState.FLIGHT}")
+    }
+
     private fun spawnPowerUp(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
-        val y = -20f
-        val types = listOf("power_up", "shield", "speed", "stealth", "warp")
+        val y = 0f
+        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star")
         val type = types.random()
         powerUps.add(PowerUp(x, y, type))
     }
 
     private fun spawnAsteroid(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
-        val y = -20f
+        val y = 0f
         asteroids.add(Asteroid(x, y))
+    }
+
+    private fun playPowerUpSound() {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(context, R.raw.power_up_sound)
+            mediaPlayer?.start()
+            mediaPlayer?.setOnCompletionListener { it.release() }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to play power-up sound")
+        }
+    }
+
+    fun onDestroy() {
+        renderer.onDestroy()
+        mediaPlayer?.release()
+        mediaPlayer = null
+        mergedShipBitmap?.recycle()
+        mergedShipBitmap = null
     }
 
     data class Part(val type: String, val bitmap: Bitmap, var x: Float, var y: Float, var rotation: Float, var scale: Float = 1f)

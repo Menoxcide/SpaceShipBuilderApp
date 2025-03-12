@@ -2,171 +2,156 @@ package com.example.spaceshipbuilderapp
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import com.example.spaceshipbuilderapp.BuildConfig
-import com.example.spaceshipbuilderapp.GameEngine.Part
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class FlightView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : View(context, attrs, defStyleAttr) {
-    @Inject lateinit var renderer: Renderer
+class FlightView @Inject constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
     @Inject lateinit var gameEngine: GameEngine
-    private var screenWidth = 0f
-    private var screenHeight = 0f
-    private var statusBarHeight = 0f
-    private val scope = CoroutineScope(Dispatchers.Main)
-    private var touchX = 0f
-    private var touchY = 0f
-    private var isTouching = false
+    @Inject lateinit var renderer: Renderer
+
+    private var screenWidth: Float = 0f
+    private var screenHeight: Float = 0f
+    private var statusBarHeight: Float = 0f
+    private var isDragging = false
+    private var updateRunnable: Runnable? = null
 
     init {
-        isFocusable = true
-        isFocusableInTouchMode = true
-        Timber.d("FlightView initialized, visibility=$visibility")
-
-        // Force a layout pass to ensure onSizeChanged is called
-        post {
-            if (screenWidth == 0f || screenHeight == 0f) {
-                screenWidth = context.resources.displayMetrics.widthPixels.toFloat()
-                screenHeight = context.resources.displayMetrics.heightPixels.toFloat()
-                Timber.w("onSizeChanged not called, manually setting dimensions: width=$screenWidth, height=$screenHeight")
-                gameEngine.setScreenDimensions(screenWidth, screenHeight)
-                invalidate()
-            }
-        }
-
-        scope.launch {
-            Timber.d("FlightView coroutine started")
-            while (true) {
-                if (gameEngine.gameState == GameState.FLIGHT) {
-                    gameEngine.update(screenWidth, screenHeight)
-                    renderer.updateAnimationFrame()
-                    invalidate()
-                    Timber.d("FlightView update loop: gameState=${gameEngine.gameState}, invalidated")
-                } else {
-                    Timber.d("FlightView update loop skipped: gameState=${gameEngine.gameState}")
-                }
-                kotlinx.coroutines.delay(16) // ~60 FPS
-            }
-        }
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        Timber.d("FlightView attached to window, visibility=$visibility")
+        if (BuildConfig.DEBUG) Timber.d("FlightView initialized")
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         screenWidth = w.toFloat()
         screenHeight = h.toFloat()
-        Timber.d("FlightView size changed: width=$screenWidth, height=$screenHeight, statusBarHeight=$statusBarHeight")
-        gameEngine.setScreenDimensions(screenWidth, screenHeight)
-        invalidate()
+        gameEngine.screenWidth = screenWidth
+        gameEngine.screenHeight = screenHeight
+        if (BuildConfig.DEBUG) Timber.d("FlightView size changed: w=$w, h=$h")
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        if (gameEngine.gameState == GameState.FLIGHT && visibility == View.VISIBLE) {
-            Timber.d("onDraw called, visibility=$visibility, gameState=${gameEngine.gameState}")
-            renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
-            renderer.drawShip(canvas, gameEngine.parts, screenWidth, screenHeight, gameEngine.shipX, gameEngine.shipY)
-            Timber.d("Drawing ${gameEngine.powerUps.size} power-ups")
-            renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
-            Timber.d("Drawing ${gameEngine.asteroids.size} asteroids")
-            renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
-            renderer.drawStats(canvas, gameEngine, statusBarHeight)
-            Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
-        } else {
-            Timber.w("onDraw skipped: gameState=${gameEngine.gameState}, visibility=$visibility")
-        }
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (BuildConfig.DEBUG) Timber.d("Touch event received: action=${event.actionMasked}")
-        val handled = when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                touchX = event.x
-                touchY = event.y
-                isTouching = true
-                if (BuildConfig.DEBUG) Timber.d("Touch down at (x=${touchX}, y=${touchY})")
-                true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (isTouching && gameEngine.gameState == GameState.FLIGHT) {
-                    val dx = event.x - touchX
-                    val dy = event.y - touchY
-                    touchX = event.x
-                    touchY = event.y
-                    if (BuildConfig.DEBUG) Timber.d("Touch move: dx=$dx, dy=$dy")
-                    val threshold = 10f
-                    if (Math.abs(dx) > threshold || Math.abs(dy) > threshold) {
-                        if (Math.abs(dx) > Math.abs(dy)) {
-                            if (dx > threshold) {
-                                gameEngine.moveShip(3) // Right
-                                if (BuildConfig.DEBUG) Timber.d("Moving right: dx=$dx")
-                            } else if (dx < -threshold) {
-                                gameEngine.moveShip(2) // Left
-                                if (BuildConfig.DEBUG) Timber.d("Moving left: dx=$dx")
-                            }
-                        } else {
-                            if (dy > threshold) {
-                                gameEngine.moveShip(1) // Down
-                                if (BuildConfig.DEBUG) Timber.d("Moving down: dy=$dy")
-                            } else if (dy < -threshold) {
-                                gameEngine.moveShip(0) // Up
-                                if (BuildConfig.DEBUG) Timber.d("Moving up: dy=$dy")
-                            }
-                        }
-                    }
-                }
-                true
-            }
-            MotionEvent.ACTION_UP -> {
-                isTouching = false
-                gameEngine.stopShip()
-                if (BuildConfig.DEBUG) Timber.d("Touch up, stopping ship")
-                true
-            }
-            else -> false
-        }
-        invalidate()
-        return handled
-    }
-
-    fun setStatusBarHeight(height: Int) {
-        statusBarHeight = height.toFloat()
-        Timber.d("Status bar height set to: $statusBarHeight")
-        invalidate()
+    fun setStatusBarHeight(height: Float) {
+        statusBarHeight = height
+        if (BuildConfig.DEBUG) Timber.d("FlightView status bar height set to: $height")
     }
 
     fun setGameMode(mode: GameState) {
         if (mode == GameState.FLIGHT) {
             visibility = View.VISIBLE
-            requestFocus()
-            postInvalidate()
-            Timber.d("FlightView set to FLIGHT mode, visibility=$visibility")
+            gameEngine.shipX = screenWidth / 2f
+            gameEngine.shipY = screenHeight / 2f
+            gameEngine.onPowerUpCollectedListener = { x, y ->
+                renderer.particleSystem.addCollectionParticles(x, y)
+            }
+            startUpdateLoop()
+            if (BuildConfig.DEBUG) Timber.d("FlightView activated, starting update loop")
         } else {
             visibility = View.GONE
-            Timber.d("FlightView set to $mode, visibility=$visibility")
+            stopUpdateLoop()
+            if (BuildConfig.DEBUG) Timber.d("FlightView deactivated")
         }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) {
+            Timber.w("onDraw skipped: gameState=${gameState}, visibility=$visibility")
+            return
+        }
+        super.onDraw(canvas)
+        Timber.d("onDraw called, visibility=$visibility, gameState=${gameState}")
+        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
+        renderer.drawShip(
+            canvas,
+            emptyList(),
+            screenWidth,
+            screenHeight,
+            gameEngine.shipX,
+            gameEngine.shipY,
+            gameState,
+            gameEngine.mergedShipBitmap,
+            gameEngine.placeholders // Pass placeholders to renderer
+        )
+        gameEngine.powerUps.forEach { Timber.d("Power-up at (x=${it.x}, y=${it.y})") }
+        gameEngine.asteroids.forEach { Timber.d("Asteroid at (x=${it.x}, y=${it.y})") }
+        Timber.d("Drawing ${gameEngine.powerUps.size} power-ups")
+        renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
+        Timber.d("Drawing ${gameEngine.asteroids.size} asteroids")
+        renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
+        renderer.drawStats(canvas, gameEngine, statusBarHeight)
+        Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) return false
+        val shipRect = RectF(
+            gameEngine.shipX - (gameEngine.mergedShipBitmap?.width ?: 0) / 2f,
+            gameEngine.shipY - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f,
+            gameEngine.shipX + (gameEngine.mergedShipBitmap?.width ?: 0) / 2f,
+            gameEngine.shipY + (gameEngine.mergedShipBitmap?.height ?: 0) / 2f
+        )
+
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (shipRect.contains(event.rawX, event.rawY)) {
+                    isDragging = true
+                    if (BuildConfig.DEBUG) Timber.d("Started dragging ship")
+                    true
+                } else {
+                    false
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (isDragging) {
+                    gameEngine.shipX = event.rawX.coerceIn(0f + (gameEngine.mergedShipBitmap?.width ?: 0) / 2f, screenWidth - (gameEngine.mergedShipBitmap?.width ?: 0) / 2f)
+                    gameEngine.shipY = event.rawY.coerceIn(0f + (gameEngine.mergedShipBitmap?.height ?: 0) / 2f, screenHeight - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f)
+                    if (BuildConfig.DEBUG) Timber.d("Ship moved to (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
+                    invalidate()
+                }
+                true
+            }
+            MotionEvent.ACTION_UP -> {
+                isDragging = false
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun startUpdateLoop() {
+        updateRunnable?.let { removeCallbacks(it) }
+        updateRunnable = object : Runnable {
+            override fun run() {
+                if (gameState == GameState.FLIGHT && visibility == View.VISIBLE) {
+                    gameEngine.update(screenWidth, screenHeight)
+                    invalidate()
+                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop: gameState=${gameState}, invalidated")
+                    postDelayed(this, 16)
+                } else {
+                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop skipped: gameState=${gameState}")
+                }
+            }
+        }
+        post(updateRunnable)
+    }
+
+    private fun stopUpdateLoop() {
+        updateRunnable?.let { removeCallbacks(it) }
+        updateRunnable = null
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        scope.cancel()
-        Timber.d("FlightView detached from window")
+        stopUpdateLoop()
+        if (BuildConfig.DEBUG) Timber.d("FlightView detached from window")
     }
+
+    private val gameState: GameState
+        get() = gameEngine.gameState
 }

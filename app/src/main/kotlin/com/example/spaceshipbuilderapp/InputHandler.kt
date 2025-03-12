@@ -1,51 +1,72 @@
 package com.example.spaceshipbuilderapp
 
 import android.view.MotionEvent
-import com.example.spaceshipbuilderapp.BuildConfig
 import com.example.spaceshipbuilderapp.GameEngine.Part
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.math.hypot
 
-class InputHandler @Inject constructor(private val gameEngine: GameEngine) {
+class InputHandler @Inject constructor(
+    private val gameEngine: GameEngine,
+    private val renderer: Renderer // Injected to access ParticleSystem
+) {
     companion object {
         const val SNAP_RANGE = 200f
         const val OVERLAP_THRESHOLD = 50f
     }
 
     fun onTouchEvent(event: MotionEvent): Boolean {
-        if (gameEngine.gameState != GameState.BUILD) return false // Disable in FLIGHT mode
+        if (gameEngine.gameState != GameState.BUILD) return false
         return when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> true // Handled by MainActivity
+            MotionEvent.ACTION_DOWN -> {
+                true
+            }
             MotionEvent.ACTION_MOVE -> {
                 gameEngine.selectedPart?.let { part ->
                     part.x = event.rawX
                     part.y = event.rawY
+                    if (BuildConfig.DEBUG) Timber.d("Dragging ${part.type} to (x=${part.x}, y=${part.y})")
                 }
                 true
             }
             MotionEvent.ACTION_UP -> {
-                val part = gameEngine.selectedPart ?: return false
+                val part = gameEngine.selectedPart ?: run {
+                    if (BuildConfig.DEBUG) Timber.d("No selected part on ACTION_UP")
+                    return false
+                }
                 getTargetPosition(part.type)?.let { (targetX, targetY) ->
                     val distance = hypot(part.x - targetX, part.y - targetY)
+                    if (BuildConfig.DEBUG) Timber.d("Checking snap for ${part.type}: distance=$distance, targetX=$targetX, targetY=$targetY")
                     if (distance < SNAP_RANGE && !checkOverlap(targetX, targetY, part)) {
+                        gameEngine.parts.removeAll { it.type == part.type || (it.x == part.x && it.y == part.y) }
                         part.x = targetX
                         part.y = targetY
                         part.scale = gameEngine.placeholders.find { it.type == part.type }?.scale ?: 1f
-                        gameEngine.parts.removeAll { it.type == part.type }
                         gameEngine.parts.add(part)
-                        if (BuildConfig.DEBUG) Timber.d("Snapped ${part.type} at (x=$targetX, y=$targetY) with scale=${part.scale}")
+                        if (BuildConfig.DEBUG) Timber.d("Snapped ${part.type} to (x=${part.x}, y=${part.y}) with scale=${part.scale}, parts count: ${gameEngine.parts.size}")
+
+                        // Check if ship is spaceworthy and trigger celebratory particles
+                        if (gameEngine.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
+                            val shipCenterX = gameEngine.screenWidth / 2f
+                            val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
+                            renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+                            Timber.d("Ship fully assembled and spaceworthy! Triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
+                        }
                         true
                     } else {
-                        if (BuildConfig.DEBUG) Timber.d("Invalid placement - Out of range or overlap detected")
+                        if (BuildConfig.DEBUG) Timber.d("Invalid placement - Distance=$distance, Overlap=${checkOverlap(targetX, targetY, part)}")
                         gameEngine.parts.remove(part)
                         false
                     }
                 } ?: run {
+                    if (BuildConfig.DEBUG) Timber.d("No target position found for ${part.type}")
                     gameEngine.parts.remove(part)
                     false
                 }.also {
                     gameEngine.selectedPart = null
+                    if (BuildConfig.DEBUG) Timber.d("Cleared selected part")
+                    // Force recheck of launch button visibility
+                    gameEngine.notifyLaunchListener()
                 }
             }
             else -> false
@@ -54,9 +75,14 @@ class InputHandler @Inject constructor(private val gameEngine: GameEngine) {
 
     private fun getTargetPosition(partType: String): Pair<Float, Float>? {
         return gameEngine.placeholders.find { it.type == partType }?.let { Pair(it.x, it.y) }
+            .also { if (BuildConfig.DEBUG && it == null) Timber.d("No placeholder found for $partType") }
     }
 
     private fun checkOverlap(x: Float, y: Float, part: Part): Boolean {
-        return gameEngine.parts.any { it != part && hypot(it.x - x, it.y - y) < OVERLAP_THRESHOLD }
+        val overlap = gameEngine.parts.any { existingPart ->
+            existingPart != part && hypot(existingPart.x - x, existingPart.y - y) < OVERLAP_THRESHOLD
+        }
+        if (BuildConfig.DEBUG && overlap) Timber.d("Overlap detected at (x=$x, y=$y)")
+        return overlap
     }
 }

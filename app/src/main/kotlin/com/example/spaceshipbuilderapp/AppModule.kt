@@ -20,8 +20,26 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideRenderer(@ApplicationContext context: Context): Renderer {
-        return Renderer(context)
+    fun provideParticleSystem(@ApplicationContext context: Context): ParticleSystem {
+        return ParticleSystem(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRenderer(
+        @ApplicationContext context: Context,
+        particleSystem: ParticleSystem
+    ): Renderer {
+        return Renderer(context, particleSystem)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGameEngine(
+        @ApplicationContext context: Context,
+        renderer: Renderer
+    ): GameEngine {
+        return GameEngine(context, renderer)
     }
 
     @Provides

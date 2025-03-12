@@ -1,120 +1,72 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import android.widget.Toast
-import com.example.spaceshipbuilderapp.GameEngine.Part
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
+import androidx.core.view.isVisible
+import timber.log.Timber
 import javax.inject.Inject
+import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class BuildView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
-) : View(context, attrs, defStyleAttr) {
-    @Inject lateinit var renderer: Renderer
+class BuildView @Inject constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : View(context, attrs) {
     @Inject lateinit var gameEngine: GameEngine
-    private val inputHandler by lazy { InputHandler(gameEngine) }
-    private var screenWidth = 0f
-    private var screenHeight = 0f
-    private var statusBarHeight = 0f
-    private val scope = CoroutineScope(Dispatchers.Main)
-    private var wasCorrectOrder = false // Track previous state for toast
+    @Inject lateinit var renderer: Renderer
+    @Inject lateinit var inputHandler: InputHandler
 
-    val cockpitBitmap: Bitmap get() = renderer.cockpitBitmap
-    val fuelTankBitmap: Bitmap get() = renderer.fuelTankBitmap
-    val engineBitmap: Bitmap get() = renderer.engineBitmap
+    private var screenWidth: Float = 0f
+    private var screenHeight: Float = 0f
+    private var statusBarHeight: Float = 0f
+    private var isDragging = false
+    private var initialX = 0f
+    private var initialY = 0f
+    private var lastParticleTriggerTime = 0L
+    private var isLaunchButtonVisible = false
+    private var isSpaceworthy = false
 
     init {
-        gameEngine.setLaunchListener { isLaunching ->
-            (context as? MainActivity)?.setSelectionPanelVisibility(!isLaunching)
-            if (!isLaunching) renderer.clearParticles()
-            (context as? MainActivity)?.setLaunchButtonVisibility(gameEngine.isShipInCorrectOrder() && gameEngine.parts.size == 3 && !isLaunching)
-        }
-        scope.launch {
-            while (true) {
-                gameEngine.update(screenWidth, screenHeight) // Pass screenWidth to satisfy method signature
-                renderer.updateAnimationFrame()
-                // Check for successful build and show toast
-                val isCorrectOrder = gameEngine.isShipInCorrectOrder()
-                if (isCorrectOrder && gameEngine.parts.size == 3 && !wasCorrectOrder) {
-                    Toast.makeText(context, "Success!", Toast.LENGTH_SHORT).show()
-                    (context as? MainActivity)?.setLaunchButtonVisibility(true)
-                }
-                wasCorrectOrder = isCorrectOrder && gameEngine.parts.size == 3
-                (context as? MainActivity)?.setLaunchButtonVisibility(isCorrectOrder && gameEngine.parts.size == 3 && gameEngine.gameState == GameState.BUILD)
-                postInvalidate()
-                kotlinx.coroutines.delay(16) // ~60 FPS
-            }
-        }
+        if (BuildConfig.DEBUG) Timber.d("BuildView initialized")
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         screenWidth = w.toFloat()
         screenHeight = h.toFloat()
+        gameEngine.setScreenDimensions(screenWidth, screenHeight, statusBarHeight)
         gameEngine.initializePlaceholders(
             screenWidth,
             screenHeight,
             renderer.cockpitPlaceholderBitmap,
             renderer.fuelTankPlaceholderBitmap,
-            renderer.enginePlaceholderBitmap
+            renderer.enginePlaceholderBitmap,
+            statusBarHeight
         )
+        if (BuildConfig.DEBUG) Timber.d("BuildView size changed: w=$w, h=$h")
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
-
-        renderer.drawPlaceholders(canvas, gameEngine.placeholders)
-        renderer.drawParts(canvas, gameEngine.parts)
-        gameEngine.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
-        if (gameEngine.isShipInCorrectOrder() && gameEngine.parts.size == 3) {
-            renderer.drawSuccessAnimation(canvas, gameEngine.parts)
-        }
-        renderer.drawStats(canvas, gameEngine, statusBarHeight)
+    fun setStatusBarHeight(height: Float) {
+        statusBarHeight = height
+        gameEngine.setScreenDimensions(screenWidth, screenHeight, statusBarHeight)
+        gameEngine.initializePlaceholders(
+            screenWidth,
+            screenHeight,
+            renderer.cockpitPlaceholderBitmap,
+            renderer.fuelTankPlaceholderBitmap,
+            renderer.enginePlaceholderBitmap,
+            statusBarHeight
+        )
+        if (BuildConfig.DEBUG) Timber.d("BuildView status bar height set to: $height")
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        val handled = inputHandler.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP) {
-            val hasHistory = event.historySize > 0
-            val dx = if (hasHistory) event.getHistoricalX(0) - event.getX() else 0f
-            val dy = if (hasHistory) event.getHistoricalY(0) - event.getY() else 0f
-            if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
-                performClick()
-            }
-        }
-        invalidate()
-        return handled
-    }
-
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
-    fun setSelectedPart(part: Part?) {
+    fun setSelectedPart(part: GameEngine.Part) {
         gameEngine.selectedPart = part
         invalidate()
-    }
-
-    fun setStatusBarHeight(height: Int) {
-        statusBarHeight = height.toFloat()
-        invalidate()
-    }
-
-    fun launchShip(): Boolean {
-        return gameEngine.launchShip(screenWidth, screenHeight).also { invalidate() }
+        if (BuildConfig.DEBUG) Timber.d("Selected part set to ${part.type} at (x=${part.x}, y=${part.y})")
     }
 
     fun rotatePart(partType: String) {
@@ -122,17 +74,100 @@ class BuildView @JvmOverloads constructor(
         invalidate()
     }
 
-    fun showLeaderboard() {
-        (context as? MainActivity)?.showLeaderboard()
+    fun launchShip(): Boolean {
+        val success = gameEngine.launchShip(screenWidth, screenHeight)
+        if (success) {
+            gameEngine.gameState = GameState.FLIGHT
+            visibility = View.GONE
+            if (BuildConfig.DEBUG) Timber.d("BuildView hidden, launching to Flight mode")
+        }
         invalidate()
+        return success
     }
 
-    fun setLaunchListener(listener: (Boolean) -> Unit) {
-        gameEngine.setLaunchListener(listener)
+    override fun onDraw(canvas: Canvas) {
+        if (gameState != GameState.BUILD || !isVisible) {
+            Timber.w("onDraw skipped: gameState=${gameState}, visibility=$isVisible")
+            return
+        }
+        super.onDraw(canvas)
+        Timber.d("onDraw called, visibility=$isVisible, gameState=${gameState}")
+
+        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
+        renderer.drawPlaceholders(canvas, gameEngine.placeholders)
+        renderer.drawParts(canvas, gameEngine.parts)
+        gameEngine.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
+        renderer.drawStats(canvas, gameEngine, statusBarHeight)
+        renderer.drawShip(
+            canvas,
+            gameEngine.parts,
+            screenWidth,
+            screenHeight,
+            screenWidth / 2f,
+            screenHeight / 2f,
+            gameState,
+            gameEngine.mergedShipBitmap,
+            gameEngine.placeholders
+        )
+
+        // Check if ship is spaceworthy and trigger particles
+        val currentSpaceworthy = gameEngine.parts.size == 3 && gameEngine.isShipSpaceworthy(screenHeight)
+        if (currentSpaceworthy && !isSpaceworthy) {
+            // Immediate particle trigger when ship becomes spaceworthy
+            val shipCenterX = gameEngine.screenWidth / 2f
+            val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
+            renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+            Timber.d("Ship became spaceworthy, immediately triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
+            lastParticleTriggerTime = System.currentTimeMillis()
+            isSpaceworthy = true
+        } else if (!currentSpaceworthy && isSpaceworthy) {
+            isSpaceworthy = false
+            Timber.d("Ship no longer spaceworthy")
+        }
+
+        if (currentSpaceworthy) {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastParticleTriggerTime >= 1000) { // Trigger every second
+                val shipCenterX = gameEngine.screenWidth / 2f
+                val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
+                renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+                lastParticleTriggerTime = currentTime
+                Timber.d("Periodic celebratory particles triggered at (x=$shipCenterX, y=$shipCenterY)")
+            }
+        }
+
+        // Force update launch button visibility
+        val isLaunchReady = currentSpaceworthy && gameState == GameState.BUILD
+        if (isLaunchReady != isLaunchButtonVisible) {
+            (context as? MainActivity)?.setLaunchButtonVisibility(isLaunchReady)
+            isLaunchButtonVisible = isLaunchReady
+            Timber.d("Forced launch button visibility update to $isLaunchReady in BuildView")
+        }
+
+        Timber.d("Rendered frame in BuildView with parts count: ${gameEngine.parts.size}, parts: ${gameEngine.parts.map { "${it.type} at y=${it.y}" }}")
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (gameState != GameState.BUILD || !isVisible) return false
+
+        val handled = inputHandler.onTouchEvent(event)
+        if (handled) {
+            invalidate()
+            if (BuildConfig.DEBUG) Timber.d("Touch event handled by InputHandler, invalidating view")
+        }
+        return handled
+    }
+
+    override fun performClick(): Boolean {
+        if (BuildConfig.DEBUG) Timber.d("BuildView performClick called")
+        return super.performClick()
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        scope.cancel()
+        if (BuildConfig.DEBUG) Timber.d("BuildView detached from window")
     }
+
+    private val gameState: GameState
+        get() = gameEngine.gameState
 }
