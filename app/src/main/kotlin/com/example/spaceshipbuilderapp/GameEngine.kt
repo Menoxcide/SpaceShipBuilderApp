@@ -42,6 +42,7 @@ class GameEngine @Inject constructor(
                 parts.clear()
                 onLaunchListener?.invoke(false)
                 resetPowerUpEffects()
+                level++ // Increment level on crash/return to BUILD
                 currentScore = 0
             }
         }
@@ -53,7 +54,8 @@ class GameEngine @Inject constructor(
     var fuelCapacity = 100f
     var hp = 100f
     var maxHp = 100f
-    var level = 1
+    var level = 1 // Progression level
+    var playerName: String = "Player" // Default name
     private var onLaunchListener: ((Boolean) -> Unit)? = null
     var onPowerUpCollectedListener: ((Float, Float) -> Unit)? = null
     var currentScore = 0
@@ -66,8 +68,8 @@ class GameEngine @Inject constructor(
 
     val powerUps = mutableListOf<PowerUp>()
     val asteroids = mutableListOf<Asteroid>()
-    private val powerUpSpawnRate = 1500L
-    private val asteroidSpawnRate = 1500L
+    private val powerUpSpawnRateBase = 2000L // Adjusted for less frequent fuel
+    private val asteroidSpawnRateBase = 1500L
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
     private var lastScoreUpdateTime = System.currentTimeMillis()
@@ -174,6 +176,10 @@ class GameEngine @Inject constructor(
             lastScoreUpdateTime = currentTime
         }
 
+        // Adjust spawn rates based on level
+        val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.05f)).toLong() // Slower with level
+        val asteroidSpawnRate = (asteroidSpawnRateBase / (1 + level * 0.1f)).toLong() // Faster with level
+
         if (currentTime - lastPowerUpSpawnTime >= powerUpSpawnRate) {
             spawnPowerUp(this.screenWidth)
             lastPowerUpSpawnTime = currentTime
@@ -187,7 +193,7 @@ class GameEngine @Inject constructor(
         }
 
         powerUps.forEach { it.update(this.screenHeight) }
-        asteroids.forEach { it.update(this.screenHeight) }
+        asteroids.forEach { it.update(this.screenHeight, level) }
 
         val powerUpsToRemove = mutableListOf<PowerUp>()
         val asteroidsToRemove = mutableListOf<Asteroid>()
@@ -226,6 +232,7 @@ class GameEngine @Inject constructor(
                         Timber.d("Star collected, score increased to $currentScore")
                     }
                 }
+                renderer.particleSystem.addAuraParticles(shipX, shipY, powerUp.type)
                 powerUpsToRemove.add(powerUp)
                 Timber.d("Collected ${powerUp.type} power-up")
                 onPowerUpCollectedListener?.invoke(powerUp.x, powerUp.y)
@@ -234,14 +241,14 @@ class GameEngine @Inject constructor(
         }
         for (asteroid in asteroids) {
             val asteroidRect = RectF(
-                asteroid.x - 30f, asteroid.y - 30f,
-                asteroid.x + 30f, asteroid.y + 30f
+                asteroid.x - asteroid.size, asteroid.y - asteroid.size,
+                asteroid.x + asteroid.size, asteroid.y + asteroid.size
             )
             if (checkCollision(asteroidRect) && !stealthActive) {
                 hp -= 10f
                 asteroidsToRemove.add(asteroid)
-                renderer.particleSystem.addCollisionParticles(shipX, shipY) // Center of ship
-                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10) // Floating -10 text
+                renderer.particleSystem.addCollisionParticles(shipX, shipY)
+                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10)
                 playCollisionSound()
                 Timber.d("Hit asteroid, HP decreased to $hp")
             }
@@ -254,7 +261,7 @@ class GameEngine @Inject constructor(
         Timber.d("After cleanup: ${powerUps.size} power-ups, ${asteroids.size} asteroids, HP: $hp, Fuel: $fuel")
 
         if (fuel <= 0 || hp <= 0) {
-            highscoreManager.addScore(currentScore)
+            highscoreManager.addScore(playerName, currentScore) // Save with name
             gameState = GameState.BUILD
             powerUps.clear()
             asteroids.clear()
@@ -380,7 +387,13 @@ class GameEngine @Inject constructor(
                 sortedParts[2].type == "engine"
     }
 
-    private fun loadPersistentData() {}
+    private fun loadPersistentData() {
+        level = prefs.getInt("level", 1) // Load saved level
+    }
+
+    private fun savePersistentData() {
+        prefs.edit().putInt("level", level).apply()
+    }
 
     fun setLaunchListener(listener: (Boolean) -> Unit) {
         onLaunchListener = listener
@@ -395,14 +408,15 @@ class GameEngine @Inject constructor(
         val x = Random.nextFloat() * screenWidth
         val y = 0f
         val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star")
-        val type = if (Random.nextFloat() < 0.5f) "power_up" else types.random()
+        val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random() // 40% chance for fuel
         powerUps.add(PowerUp(x, y, type))
     }
 
     private fun spawnAsteroid(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        asteroids.add(Asteroid(x, y))
+        val size = if (Random.nextFloat() < 0.2f * (level / 10f)) 50f else 30f // 20% chance for big asteroid, increases with level
+        asteroids.add(Asteroid(x, y, size))
     }
 
     private fun playPowerUpSound() {
@@ -419,7 +433,7 @@ class GameEngine @Inject constructor(
     private fun playCollisionSound() {
         try {
             mediaPlayer?.release()
-            mediaPlayer = MediaPlayer.create(context, R.raw.x)
+            mediaPlayer = MediaPlayer.create(context, R.raw.asteroid_hit)
             if (mediaPlayer != null) {
                 mediaPlayer?.start()
                 mediaPlayer?.setOnCompletionListener { it.release() }
@@ -438,6 +452,7 @@ class GameEngine @Inject constructor(
         mediaPlayer = null
         mergedShipBitmap?.recycle()
         mergedShipBitmap = null
+        savePersistentData() // Save level on destroy
     }
 
     data class Part(val type: String, val bitmap: Bitmap, var x: Float, var y: Float, var rotation: Float, var scale: Float = 1f)
@@ -454,9 +469,9 @@ class GameEngine @Inject constructor(
         }
     }
 
-    data class Asteroid(var x: Float, var y: Float) {
-        fun update(screenHeight: Float) {
-            y += 7f
+    data class Asteroid(var x: Float, var y: Float, val size: Float) {
+        fun update(screenHeight: Float, level: Int) {
+            y += 7f + level * 0.2f // Faster with level
         }
 
         fun isOffScreen(screenHeight: Float): Boolean {

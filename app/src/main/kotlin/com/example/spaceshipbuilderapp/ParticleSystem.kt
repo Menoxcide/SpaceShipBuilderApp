@@ -17,9 +17,24 @@ class ParticleSystem(private val context: Context) {
     private val exhaustParticles = CopyOnWriteArrayList<ExhaustParticle>()
     private val warpParticles = CopyOnWriteArrayList<WarpParticle>()
     private val collectionParticles = CopyOnWriteArrayList<CollectionParticle>()
+    private val collisionParticles = CopyOnWriteArrayList<CollisionParticle>()
+    private val damageTextParticles = CopyOnWriteArrayList<DamageTextParticle>()
+    private val auraParticles = CopyOnWriteArrayList<AuraParticle>() // New for power-up auras
     private val exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
     private val exhaustPaint = Paint().apply { isAntiAlias = true }
     private val collectionPaint = Paint().apply { isAntiAlias = true }
+    private val collisionPaint = Paint().apply { isAntiAlias = true }
+    private val damageTextPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.RED
+        textSize = 30f
+        textAlign = Paint.Align.CENTER
+    }
+    private val auraPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
 
     companion object {
         const val EXHAUST_WIDTH = 13f
@@ -27,6 +42,9 @@ class ParticleSystem(private val context: Context) {
         const val EXHAUST_LIFE_DECAY = 0.05f
         const val WARP_LIFE_DECAY = 0.03f
         const val COLLECTION_LIFE_DECAY = 0.01f
+        const val COLLISION_LIFE_DECAY = 0.02f
+        const val DAMAGE_TEXT_LIFE_DECAY = 0.02f
+        const val AURA_LIFE_DECAY = 0.01f // Slower decay for aura effect
     }
 
     data class ExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
@@ -35,7 +53,6 @@ class ParticleSystem(private val context: Context) {
             y += speedY
             life -= EXHAUST_LIFE_DECAY
         }
-
         fun isDead() = life <= 0f
     }
 
@@ -45,7 +62,6 @@ class ParticleSystem(private val context: Context) {
             y += speedY
             life -= WARP_LIFE_DECAY
         }
-
         fun isDead() = life <= 0f
     }
 
@@ -55,7 +71,31 @@ class ParticleSystem(private val context: Context) {
             y += speedY
             life -= COLLECTION_LIFE_DECAY
         }
+        fun isDead() = life <= 0f
+    }
 
+    data class CollisionParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float) {
+        fun update() {
+            x += speedX
+            y += speedY
+            life -= COLLISION_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class DamageTextParticle(var x: Float, var y: Float, var speedY: Float, var life: Float, val text: String) {
+        fun update() {
+            y += speedY
+            life -= DAMAGE_TEXT_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class AuraParticle(var x: Float, var y: Float, var radius: Float, var life: Float, val color: Int) {
+        fun update() {
+            radius += 1f // Expand slightly
+            life -= AURA_LIFE_DECAY
+        }
         fun isDead() = life <= 0f
     }
 
@@ -72,7 +112,7 @@ class ParticleSystem(private val context: Context) {
     }
 
     fun addCollectionParticles(x: Float, y: Float) {
-        repeat(10) { // Increased number of particles for better visibility
+        repeat(10) {
             val angle = Random.nextFloat() * 360f
             val speed = Random.nextFloat() * 5f + 2f
             collectionParticles.add(
@@ -87,6 +127,61 @@ class ParticleSystem(private val context: Context) {
             )
         }
         Timber.d("Added ${collectionParticles.size} collection particles at (x=$x, y=$y)")
+    }
+
+    fun addCollisionParticles(x: Float, y: Float) {
+        repeat(15) {
+            val angle = Random.nextFloat() * 360f
+            val speed = Random.nextFloat() * 6f + 3f
+            collisionParticles.add(
+                CollisionParticle(
+                    x = x,
+                    y = y,
+                    speedX = kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat() * speed,
+                    speedY = kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat() * speed,
+                    life = 1f,
+                    size = Random.nextFloat() * 4f + 2f
+                )
+            )
+        }
+        Timber.d("Added ${collisionParticles.size} collision particles at (x=$x, y=$y)")
+    }
+
+    fun addDamageTextParticle(x: Float, y: Float, damage: Int) {
+        damageTextParticles.add(
+            DamageTextParticle(
+                x = x,
+                y = y,
+                speedY = -2f,
+                life = 1f,
+                text = "-$damage"
+            )
+        )
+        Timber.d("Added damage text particle at (x=$x, y=$y) with text: -$damage")
+    }
+
+    fun addAuraParticles(x: Float, y: Float, powerUpType: String) {
+        val color = when (powerUpType) {
+            "power_up" -> Color.GREEN
+            "shield" -> Color.BLUE
+            "speed" -> Color.YELLOW
+            "stealth" -> Color.GRAY
+            "warp" -> Color.MAGENTA
+            "star" -> Color.WHITE
+            else -> Color.WHITE
+        }
+        repeat(5) { // Multiple rings for effect
+            auraParticles.add(
+                AuraParticle(
+                    x = x,
+                    y = y,
+                    radius = 20f + it * 10f, // Staggered radii
+                    life = 1f,
+                    color = color
+                )
+            )
+        }
+        Timber.d("Added ${auraParticles.size} aura particles at (x=$x, y=$y) for $powerUpType")
     }
 
     fun drawExhaustParticles(canvas: Canvas) {
@@ -141,10 +236,51 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${collectionParticles.size} collection particles")
     }
 
+    fun drawCollisionParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<CollisionParticle>()
+        collisionParticles.forEach { particle ->
+            particle.update()
+            collisionPaint.color = Color.RED
+            collisionPaint.alpha = (particle.life * 255).toInt()
+            canvas.drawCircle(particle.x, particle.y, particle.size, collisionPaint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        collisionParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${collisionParticles.size} collision particles")
+    }
+
+    fun drawDamageTextParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<DamageTextParticle>()
+        damageTextParticles.forEach { particle ->
+            particle.update()
+            damageTextPaint.alpha = (particle.life * 255).toInt()
+            canvas.drawText(particle.text, particle.x, particle.y, damageTextPaint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        damageTextParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${damageTextParticles.size} damage text particles")
+    }
+
+    fun drawAuraParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<AuraParticle>()
+        auraParticles.forEach { particle ->
+            particle.update()
+            auraPaint.color = particle.color
+            auraPaint.alpha = (particle.life * 255).toInt()
+            canvas.drawCircle(particle.x, particle.y, particle.radius, auraPaint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        auraParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${auraParticles.size} aura particles")
+    }
+
     fun clearParticles() {
         exhaustParticles.clear()
         warpParticles.clear()
         collectionParticles.clear()
+        collisionParticles.clear()
+        damageTextParticles.clear()
+        auraParticles.clear()
     }
 
     fun onDestroy() {

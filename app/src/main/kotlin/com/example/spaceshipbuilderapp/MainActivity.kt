@@ -26,7 +26,6 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private lateinit var voiceCommandHandler: VoiceCommandHandler
     private var initialX = 0f
     private var initialY = 0f
     private var isDragging = false
@@ -139,12 +138,10 @@ class MainActivity : AppCompatActivity() {
             setupListeners()
         }
 
-        setupVoiceCommandHandler()
-        requestAudioPermission()
-
         buildView.setOnTouchListener(placedPartTouchListener)
 
         binding.launchButton.visibility = View.GONE
+        binding.playerNameInput.visibility = View.VISIBLE // Show name input in BUILD mode
 
         val screenWidth = resources.displayMetrics.widthPixels.toFloat()
         val screenHeight = resources.displayMetrics.heightPixels.toFloat()
@@ -175,7 +172,9 @@ class MainActivity : AppCompatActivity() {
             binding.buildView.isEnabled = !isLaunching
             binding.flightView.visibility = if (isLaunching) View.VISIBLE else View.GONE
             binding.flightView.isEnabled = isLaunching
+            binding.playerNameInput.visibility = if (isLaunching) View.GONE else View.VISIBLE // Toggle name input
             if (isLaunching) {
+                gameEngine.playerName = binding.playerNameInput.text.toString().trim().ifEmpty { "Player" } // Set name before flight
                 binding.flightView.requestFocus()
                 binding.flightView.setGameMode(GameState.FLIGHT)
                 binding.flightView.postInvalidate()
@@ -198,37 +197,8 @@ class MainActivity : AppCompatActivity() {
         handler.post(animationRunnable)
     }
 
-    private fun setupVoiceCommandHandler() {
-        voiceCommandHandler = VoiceCommandHandler(this) { command ->
-            if (command.startsWith("speech_error:")) {
-                val errorMessage = command.substringAfter("speech_error:").trim()
-                showToast(errorMessage, Toast.LENGTH_LONG)
-            } else {
-                processVoiceCommand(command.lowercase())
-            }
-        }
-    }
-
     private fun showToast(message: String, duration: Int = Toast.LENGTH_SHORT) {
         Toast.makeText(this, message, duration).show()
-    }
-
-    private fun processVoiceCommand(command: String) {
-        when (command) {
-            "launch ship" -> {
-                val success = binding.buildView.launchShip()
-                if (!success) {
-                    showToast(binding.buildView.gameEngine.getSpaceworthinessFailureReason(), Toast.LENGTH_LONG)
-                }
-            }
-            "rotate engine" -> binding.buildView.rotatePart("engine")
-            "rotate cockpit" -> binding.buildView.rotatePart("cockpit")
-            "rotate fuel tank" -> binding.buildView.rotatePart("fuel_tank")
-            else -> {
-                if (BuildConfig.DEBUG) Timber.d("Unknown command: $command")
-                showToast("Command '$command' not recognized. Try 'launch ship' or 'rotate [part]'.", Toast.LENGTH_SHORT)
-            }
-        }
     }
 
     private fun setupListeners() {
@@ -286,8 +256,8 @@ class MainActivity : AppCompatActivity() {
         fun updateLeaderboardText() {
             val scores = highscoreManager.getHighscores(currentPage, pageSize)
             val sb = StringBuilder("Leaderboard (Page ${currentPage + 1}/$totalPages):\n")
-            scores.forEachIndexed { index, score ->
-                sb.append("${currentPage * pageSize + index + 1}. $score\n")
+            scores.forEachIndexed { index, entry ->
+                sb.append("${currentPage * pageSize + index + 1}. ${entry.name}: ${entry.score}\n")
             }
             highscoreText.text = sb.toString()
             prevButton.isEnabled = currentPage > 0
@@ -317,41 +287,11 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun requestAudioPermission() {
-        when {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> {
-                voiceCommandHandler.startListening()
-            }
-            ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO) -> {
-                showToast("Audio permission is needed for voice commands.", Toast.LENGTH_LONG)
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), audioPermissionCode)
-            }
-            else -> {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), audioPermissionCode)
-            }
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == audioPermissionCode && grantResults.isNotEmpty()) {
-            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                voiceCommandHandler.startListening()
-                showToast("Audio permission granted! Voice commands enabled.", Toast.LENGTH_SHORT)
-                if (BuildConfig.DEBUG) Timber.d("Audio permission granted, voice recognition started")
-            } else {
-                showToast("Audio permission denied. Voice commands disabled.", Toast.LENGTH_LONG)
-                if (BuildConfig.DEBUG) Timber.w("Audio permission denied")
-            }
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        if (::voiceCommandHandler.isInitialized) voiceCommandHandler.stopListening()
         handler.removeCallbacks(animationRunnable)
         gameEngine.onDestroy()
-        if (BuildConfig.DEBUG) Timber.d("Activity destroyed, voice command handler stopped")
+        if (BuildConfig.DEBUG) Timber.d("Activity destroyed")
     }
 
     private fun setGameMode(mode: GameState) {

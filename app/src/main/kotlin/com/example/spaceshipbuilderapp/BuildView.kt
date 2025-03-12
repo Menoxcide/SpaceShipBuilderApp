@@ -100,6 +100,7 @@ class BuildView @Inject constructor(
         renderer.drawStats(canvas, gameEngine, statusBarHeight)
         renderer.drawShip(
             canvas,
+            gameEngine, // Pass gameEngine here
             gameEngine.parts,
             screenWidth,
             screenHeight,
@@ -110,10 +111,8 @@ class BuildView @Inject constructor(
             gameEngine.placeholders
         )
 
-        // Check if ship is spaceworthy and trigger particles
         val currentSpaceworthy = gameEngine.parts.size == 3 && gameEngine.isShipSpaceworthy(screenHeight)
         if (currentSpaceworthy && !isSpaceworthy) {
-            // Immediate particle trigger when ship becomes spaceworthy
             val shipCenterX = gameEngine.screenWidth / 2f
             val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
             renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
@@ -127,7 +126,7 @@ class BuildView @Inject constructor(
 
         if (currentSpaceworthy) {
             val currentTime = System.currentTimeMillis()
-            if (currentTime - lastParticleTriggerTime >= 1000) { // Trigger every second
+            if (currentTime - lastParticleTriggerTime >= 1000) {
                 val shipCenterX = gameEngine.screenWidth / 2f
                 val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
                 renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
@@ -136,7 +135,6 @@ class BuildView @Inject constructor(
             }
         }
 
-        // Force update launch button visibility
         val isLaunchReady = currentSpaceworthy && gameState == GameState.BUILD
         if (isLaunchReady != isLaunchButtonVisible) {
             (context as? MainActivity)?.setLaunchButtonVisibility(isLaunchReady)

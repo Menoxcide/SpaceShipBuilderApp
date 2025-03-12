@@ -188,24 +188,21 @@ class Renderer @Inject constructor(
             particleSystem.drawExhaustParticles(canvas)
             particleSystem.drawCollectionParticles(canvas)
             particleSystem.drawCollisionParticles(canvas)
-            particleSystem.drawDamageTextParticles(canvas) // Draw damage text
+            particleSystem.drawDamageTextParticles(canvas)
+            particleSystem.drawAuraParticles(canvas) // Draw aura effect
 
-            // Draw HP bar above the ship
             val barWidth = mergedShipBitmap.width * 0.8f
             val barHeight = 10f
             val barX = shipX - barWidth / 2f
-            val hpBarY = y - barHeight - 15f // Adjusted for spacing above ship
-            val fuelBarY = hpBarY + barHeight + 5f // Directly below HP bar
+            val hpBarY = y - barHeight - 15f
+            val fuelBarY = hpBarY + barHeight + 5f
             val hpFraction = gameEngine.hp / gameEngine.maxHp
             val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
             val hpBarFilledWidth = barWidth * hpFraction
             val fuelBarFilledWidth = barWidth * fuelFraction
 
-            // HP bar
             canvas.drawRect(barX, hpBarY, barX + barWidth, hpBarY + barHeight, barBorderPaint)
             canvas.drawRect(barX, hpBarY, barX + hpBarFilledWidth, hpBarY + barHeight, hpBarPaint)
-
-            // Fuel bar
             canvas.drawRect(barX, fuelBarY, barX + barWidth, fuelBarY + barHeight, barBorderPaint)
             canvas.drawRect(barX, fuelBarY, barX + fuelBarFilledWidth, fuelBarY + barHeight, fuelBarPaint)
         } else if (gameState == GameState.BUILD && shipParts.isNotEmpty()) {
@@ -254,9 +251,16 @@ class Renderer @Inject constructor(
         if (BuildConfig.DEBUG) Timber.d("Drawing ${asteroids.size} asteroids")
         asteroids.forEach { asteroid ->
             val y = asteroid.y
-            val x = asteroid.x - asteroidBitmap.width / 2f
-            canvas.drawBitmap(asteroidBitmap, x, y - asteroidBitmap.height / 2f, asteroidPaint)
-            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y)")
+            val x = asteroid.x - asteroid.size // Use asteroid size for positioning (center-based)
+            // Scale asteroid bitmap based on size (big asteroids are larger)
+            val scaledBitmap = Bitmap.createScaledBitmap(
+                asteroidBitmap,
+                (asteroid.size * 2).toInt(), // Double the size for width and height
+                (asteroid.size * 2).toInt(),
+                true
+            )
+            canvas.drawBitmap(scaledBitmap, x, y - asteroid.size, asteroidPaint)
+            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}")
         }
     }
 
@@ -264,7 +268,8 @@ class Renderer @Inject constructor(
         val textHeight = 50f
         val startY = 80f + statusBarHeight
         if (gameEngine.gameState == GameState.FLIGHT) {
-            canvas.drawText("Score: ${gameEngine.currentScore}", 40f, startY, graffitiPaint)
+            canvas.drawText("Level: ${gameEngine.level}", 40f, startY, graffitiPaint) // Show level
+            canvas.drawText("Score: ${gameEngine.currentScore}", 40f, startY + textHeight, graffitiPaint)
         } else {
             canvas.drawText("Level: ${gameEngine.level}", 40f, startY, graffitiPaint)
             canvas.drawText("Fuel: ${gameEngine.fuel.toInt()}/${gameEngine.fuelCapacity}", 40f, startY + textHeight, graffitiPaint)
