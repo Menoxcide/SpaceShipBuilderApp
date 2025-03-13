@@ -19,7 +19,9 @@ class ParticleSystem(private val context: Context) {
     private val collectionParticles = CopyOnWriteArrayList<CollectionParticle>()
     private val collisionParticles = CopyOnWriteArrayList<CollisionParticle>()
     private val damageTextParticles = CopyOnWriteArrayList<DamageTextParticle>()
-    private val auraParticles = CopyOnWriteArrayList<AuraParticle>() // New for power-up auras
+    private val auraParticles = CopyOnWriteArrayList<AuraParticle>()
+    private val powerUpTextParticles = CopyOnWriteArrayList<PowerUpTextParticle>() // New for power-up notifications
+
     private val exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
     private val exhaustPaint = Paint().apply { isAntiAlias = true }
     private val collectionPaint = Paint().apply { isAntiAlias = true }
@@ -27,7 +29,7 @@ class ParticleSystem(private val context: Context) {
     private val damageTextPaint = Paint().apply {
         isAntiAlias = true
         color = Color.RED
-        textSize = 30f
+        textSize = 40f // Increased text size
         textAlign = Paint.Align.CENTER
     }
     private val auraPaint = Paint().apply {
@@ -35,6 +37,50 @@ class ParticleSystem(private val context: Context) {
         style = Paint.Style.STROKE
         strokeWidth = 5f
     }
+    private val powerUpTextPaints = mapOf(
+        "power_up" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.YELLOW
+            textAlign = Paint.Align.CENTER
+        },
+        "shield" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.BLUE
+            textAlign = Paint.Align.CENTER
+        },
+        "speed" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.RED
+            textAlign = Paint.Align.CENTER
+        },
+        "stealth" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.GRAY
+            textAlign = Paint.Align.CENTER
+        },
+        "warp" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.MAGENTA
+            textAlign = Paint.Align.CENTER
+        },
+        "star" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+        },
+        "invincibility" to Paint().apply {
+            isAntiAlias = true
+            textSize = 40f
+            color = Color.GREEN
+            textAlign = Paint.Align.CENTER
+        }
+    )
 
     companion object {
         const val EXHAUST_WIDTH = 13f
@@ -43,8 +89,9 @@ class ParticleSystem(private val context: Context) {
         const val WARP_LIFE_DECAY = 0.03f
         const val COLLECTION_LIFE_DECAY = 0.01f
         const val COLLISION_LIFE_DECAY = 0.02f
-        const val DAMAGE_TEXT_LIFE_DECAY = 0.02f
-        const val AURA_LIFE_DECAY = 0.01f // Slower decay for aura effect
+        const val DAMAGE_TEXT_LIFE_DECAY = 0.01f // Slower decay for damage text
+        const val POWER_UP_TEXT_LIFE_DECAY = 0.01f // Same decay as damage text
+        const val AURA_LIFE_DECAY = 0.01f
     }
 
     data class ExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
@@ -95,6 +142,14 @@ class ParticleSystem(private val context: Context) {
         fun update() {
             radius += 1f // Expand slightly
             life -= AURA_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class PowerUpTextParticle(var x: Float, var y: Float, var speedY: Float, var life: Float, val text: String, val type: String) {
+        fun update() {
+            y += speedY
+            life -= POWER_UP_TEXT_LIFE_DECAY
         }
         fun isDead() = life <= 0f
     }
@@ -160,6 +215,20 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Added damage text particle at (x=$x, y=$y) with text: -$damage")
     }
 
+    fun addPowerUpTextParticle(x: Float, y: Float, text: String, powerUpType: String) {
+        powerUpTextParticles.add(
+            PowerUpTextParticle(
+                x = x,
+                y = y,
+                speedY = -2f,
+                life = 1f,
+                text = text,
+                type = powerUpType
+            )
+        )
+        Timber.d("Added power-up text particle at (x=$x, y=$y) with text: $text")
+    }
+
     fun addAuraParticles(x: Float, y: Float, powerUpType: String) {
         val color = when (powerUpType) {
             "power_up" -> Color.GREEN
@@ -168,14 +237,15 @@ class ParticleSystem(private val context: Context) {
             "stealth" -> Color.GRAY
             "warp" -> Color.MAGENTA
             "star" -> Color.WHITE
+            "invincibility" -> Color.GREEN
             else -> Color.WHITE
         }
-        repeat(5) { // Multiple rings for effect
+        repeat(5) {
             auraParticles.add(
                 AuraParticle(
                     x = x,
                     y = y,
-                    radius = 20f + it * 10f, // Staggered radii
+                    radius = 20f + it * 10f,
                     life = 1f,
                     color = color
                 )
@@ -274,6 +344,19 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${auraParticles.size} aura particles")
     }
 
+    fun drawPowerUpTextParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<PowerUpTextParticle>()
+        powerUpTextParticles.forEach { particle ->
+            particle.update()
+            val paint = powerUpTextPaints[particle.type] ?: powerUpTextPaints["power_up"]!!
+            paint.alpha = (particle.life * 255).toInt()
+            canvas.drawText(particle.text, particle.x, particle.y, paint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        powerUpTextParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${powerUpTextParticles.size} power-up text particles")
+    }
+
     fun clearParticles() {
         exhaustParticles.clear()
         warpParticles.clear()
@@ -281,6 +364,7 @@ class ParticleSystem(private val context: Context) {
         collisionParticles.clear()
         damageTextParticles.clear()
         auraParticles.clear()
+        powerUpTextParticles.clear()
     }
 
     fun onDestroy() {

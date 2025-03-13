@@ -69,7 +69,7 @@ class FlightView @Inject constructor(
         renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
         renderer.drawShip(
             canvas,
-            gameEngine, // Pass gameEngine here
+            gameEngine,
             emptyList(),
             screenWidth,
             screenHeight,
@@ -79,11 +79,7 @@ class FlightView @Inject constructor(
             gameEngine.mergedShipBitmap,
             gameEngine.placeholders
         )
-        gameEngine.powerUps.forEach { Timber.d("Power-up at (x=${it.x}, y=${it.y})") }
-        gameEngine.asteroids.forEach { Timber.d("Asteroid at (x=${it.x}, y=${it.y})") }
-        Timber.d("Drawing ${gameEngine.powerUps.size} power-ups")
         renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
-        Timber.d("Drawing ${gameEngine.asteroids.size} asteroids")
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
         renderer.drawStats(canvas, gameEngine, statusBarHeight)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")

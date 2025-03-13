@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.PorterDuff
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import androidx.core.graphics.createBitmap
@@ -42,7 +43,7 @@ class Renderer @Inject constructor(
         ?: throw IllegalStateException("Star bitmap not found")
     private val asteroidBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
         ?: throw IllegalStateException("Asteroid bitmap not found")
-    private val invincibilityBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon) // Assume you have this resource
+    private val invincibilityBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
         ?: throw IllegalStateException("Invincibility bitmap not found")
 
     data class Star(
@@ -90,14 +91,67 @@ class Renderer @Inject constructor(
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
+    private val distancePaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 40f // Reduced text size to prevent overflow
+        color = Color.YELLOW
+        textAlign = Paint.Align.CENTER
+    }
+    private val scorePaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 40f // Match reduced distance text size
+        color = Color.CYAN
+        textAlign = Paint.Align.CENTER
+    }
+    private val levelUpPaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 100f
+        color = Color.GREEN
+        textAlign = Paint.Align.CENTER
+    }
+    private val shieldAuraPaint = Paint().apply {
+        color = Color.BLUE
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+    private val speedAuraPaint = Paint().apply {
+        color = Color.RED
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+    private val stealthAuraPaint = Paint().apply {
+        color = Color.GRAY
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
     private val invincibilityAuraPaint = Paint().apply {
         color = Color.YELLOW
         style = Paint.Style.STROKE
         strokeWidth = 5f
     }
 
-    // Theme support
+    val cockpitBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
+        ?: throw IllegalStateException("Cockpit bitmap not found")
+    val fuelTankBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.fuel_tank)
+        ?: throw IllegalStateException("Fuel tank bitmap not found")
+    val engineBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.engine)
+        ?: throw IllegalStateException("Engine bitmap not found")
+
+    val cockpitPlaceholderBitmap = createPlaceholderBitmap(cockpitBitmap)
+    val fuelTankPlaceholderBitmap = createPlaceholderBitmap(fuelTankBitmap)
+    val enginePlaceholderBitmap = createPlaceholderBitmap(engineBitmap)
+
     var currentTheme = "dark"
+
+    private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
+        return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
+            Canvas(this).apply {
+                drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                hologramPaint.alpha = 128
+                drawBitmap(original, 0f, 0f, hologramPaint)
+            }
+        }
+    }
 
     fun setTheme(theme: String) {
         currentTheme = theme
@@ -113,27 +167,6 @@ class Renderer @Inject constructor(
             "neon" -> {
                 backgroundPaint.shader = LinearGradient(0f, 0f, 0f, 2400f, Color.parseColor("#00FF00"), Color.parseColor("#FF00FF"), Shader.TileMode.CLAMP)
                 graffitiPaint.color = Color.parseColor("#000000")
-            }
-        }
-    }
-
-    val cockpitBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
-        ?: throw IllegalStateException("Cockpit bitmap not found")
-    val fuelTankBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.fuel_tank)
-        ?: throw IllegalStateException("Fuel tank bitmap not found")
-    val engineBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.engine)
-        ?: throw IllegalStateException("Engine bitmap not found")
-
-    val cockpitPlaceholderBitmap = createPlaceholderBitmap(cockpitBitmap)
-    val fuelTankPlaceholderBitmap = createPlaceholderBitmap(fuelTankBitmap)
-    val enginePlaceholderBitmap = createPlaceholderBitmap(engineBitmap)
-
-    private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
-        return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
-            Canvas(this).apply {
-                drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-                hologramPaint.alpha = 128
-                drawBitmap(original, 0f, 0f, hologramPaint)
             }
         }
     }
@@ -212,6 +245,38 @@ class Renderer @Inject constructor(
             val x = shipX - mergedShipBitmap.width / 2f
             val y = shipY - mergedShipBitmap.height / 2f
             canvas.drawBitmap(mergedShipBitmap, x, y, null)
+            particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height)
+            particleSystem.drawExhaustParticles(canvas)
+            particleSystem.drawCollectionParticles(canvas)
+            particleSystem.drawCollisionParticles(canvas)
+            particleSystem.drawDamageTextParticles(canvas)
+            particleSystem.drawAuraParticles(canvas)
+
+            // Draw aura for persistent power-ups
+            if (gameEngine.shieldActive) {
+                canvas.drawCircle(
+                    shipX,
+                    shipY,
+                    mergedShipBitmap.width / 2f + 10f,
+                    shieldAuraPaint
+                )
+            }
+            if (gameEngine.speedBoostActive) {
+                canvas.drawCircle(
+                    shipX,
+                    shipY,
+                    mergedShipBitmap.width / 2f + 10f,
+                    speedAuraPaint
+                )
+            }
+            if (gameEngine.stealthActive) {
+                canvas.drawCircle(
+                    shipX,
+                    shipY,
+                    mergedShipBitmap.width / 2f + 10f,
+                    stealthAuraPaint
+                )
+            }
             if (gameEngine.invincibilityActive) {
                 canvas.drawCircle(
                     shipX,
@@ -220,12 +285,6 @@ class Renderer @Inject constructor(
                     invincibilityAuraPaint
                 )
             }
-            particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height / 2f)
-            particleSystem.drawExhaustParticles(canvas)
-            particleSystem.drawCollectionParticles(canvas)
-            particleSystem.drawCollisionParticles(canvas)
-            particleSystem.drawDamageTextParticles(canvas)
-            particleSystem.drawAuraParticles(canvas) // Draw aura effect
 
             val barWidth = mergedShipBitmap.width * 0.8f
             val barHeight = 10f
@@ -275,7 +334,7 @@ class Renderer @Inject constructor(
                 "stealth" -> stealthBitmap
                 "warp" -> warpBitmap
                 "star" -> starBitmap
-                "invincibility" -> invincibilityBitmap // Use invincibility bitmap
+                "invincibility" -> invincibilityBitmap
                 else -> powerUpBitmap
             }
             val x = powerUp.x - bitmap.width / 2f
@@ -288,11 +347,10 @@ class Renderer @Inject constructor(
         if (BuildConfig.DEBUG) Timber.d("Drawing ${asteroids.size} asteroids")
         asteroids.forEach { asteroid ->
             val y = asteroid.y
-            val x = asteroid.x - asteroid.size // Use asteroid size for positioning (center-based)
-            // Scale asteroid bitmap based on size (big asteroids are larger)
+            val x = asteroid.x - asteroid.size
             val scaledBitmap = Bitmap.createScaledBitmap(
                 asteroidBitmap,
-                (asteroid.size * 2).toInt(), // Double the size for width and height
+                (asteroid.size * 2).toInt(),
                 (asteroid.size * 2).toInt(),
                 true
             )
@@ -302,16 +360,24 @@ class Renderer @Inject constructor(
     }
 
     fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float) {
-        val textHeight = 50f
-        val startY = 80f + statusBarHeight
+        val currentTime = System.currentTimeMillis()
+        val textHeight = 40f
+        val startY = statusBarHeight + 20f
         if (gameEngine.gameState == GameState.FLIGHT) {
-            canvas.drawText("Level: ${gameEngine.level}", 40f, startY, graffitiPaint) // Show level
-            canvas.drawText("Score: ${gameEngine.currentScore}", 40f, startY + textHeight, graffitiPaint)
-        } else {
-            canvas.drawText("Level: ${gameEngine.level}", 40f, startY, graffitiPaint)
-            canvas.drawText("Fuel: ${gameEngine.fuel.toInt()}/${gameEngine.fuelCapacity}", 40f, startY + textHeight, graffitiPaint)
-            canvas.drawText("Parts: ${gameEngine.parts.size}/3", 40f, startY + textHeight * 2, graffitiPaint)
+            // Distance and score centered at the top
+            canvas.drawText("Distance: ${gameEngine.distanceTraveled.toInt()} units", screenWidth / 2f, startY, distancePaint)
+            canvas.drawText("Score: ${gameEngine.currentScore}", screenWidth / 2f, startY + textHeight, scorePaint)
+            canvas.drawText("Level: ${gameEngine.level}", 40f, startY + 2 * textHeight, graffitiPaint)
+
+            // Draw level-up animation if active
+            if (gameEngine.levelUpAnimationStartTime > 0L && currentTime - gameEngine.levelUpAnimationStartTime <= GameEngine.LEVEL_UP_ANIMATION_DURATION) {
+                val levelText = "Level ${gameEngine.level}"
+                canvas.drawText(levelText, screenWidth / 2f, screenHeight / 2f, levelUpPaint)
+            } else {
+                gameEngine.levelUpAnimationStartTime = 0L // Reset when animation ends
+            }
         }
+        // No text in Build Mode
     }
 
     fun clearParticles() {
@@ -329,7 +395,7 @@ class Renderer @Inject constructor(
         if (!warpBitmap.isRecycled) warpBitmap.recycle()
         if (!starBitmap.isRecycled) starBitmap.recycle()
         if (!asteroidBitmap.isRecycled) asteroidBitmap.recycle()
-        if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle() // Recycle invincibility bitmap
+        if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle()
         particleSystem.onDestroy()
     }
 }

@@ -26,6 +26,11 @@ class GameEngine @Inject constructor(
             field = value
             if (value == GameState.FLIGHT) {
                 onLaunchListener?.invoke(true)
+                distanceTraveled = 0f // Reset distance when entering Flight Mode
+                levelUpAnimationStartTime = 0L // Reset animation timestamp
+                // Spawn ship in the center of the screen
+                shipX = screenWidth / 2f
+                shipY = screenHeight / 2f
             } else {
                 mergedShipBitmap?.recycle()
                 mergedShipBitmap = null
@@ -42,7 +47,7 @@ class GameEngine @Inject constructor(
                 parts.clear()
                 onLaunchListener?.invoke(false)
                 resetPowerUpEffects()
-                level++ // Increment level on crash/return to BUILD
+                level = 1 // Reset level to 1 when reverting to Build Mode
                 currentScore = 0
             }
         }
@@ -73,6 +78,7 @@ class GameEngine @Inject constructor(
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
     private var lastScoreUpdateTime = System.currentTimeMillis()
+    private var lastDistanceUpdateTime = System.currentTimeMillis()
 
     var screenWidth: Float = 0f
     var screenHeight: Float = 0f
@@ -84,23 +90,29 @@ class GameEngine @Inject constructor(
 
     private var mediaPlayer: MediaPlayer? = null
 
-    private var shieldActive = false
+    var shieldActive = false
     private var shieldEndTime = 0L
-    private var speedBoostActive = false
+    var speedBoostActive = false
     private var speedBoostEndTime = 0L
-    private var stealthActive = false
+    var stealthActive = false
     private var stealthEndTime = 0L
-    var invincibilityActive = false // New invincibility state
-    private var invincibilityEndTime = 0L // New invincibility end time
+    var invincibilityActive = false
+    private var invincibilityEndTime = 0L
     private val effectDuration = 10000L
     private var baseFuelConsumption = 0.05f
     private var currentFuelConsumption = baseFuelConsumption
     private var baseSpeed = 5f
     private var currentSpeed = baseSpeed
 
+    // Distance tracking
+    var distanceTraveled = 0f
+    private val distancePerLevel = 100f
+    var levelUpAnimationStartTime = 0L // Timestamp for level-up animation
+
     companion object {
         const val ALIGNMENT_THRESHOLD = 75f
         const val PANEL_HEIGHT = 150f
+        const val LEVEL_UP_ANIMATION_DURATION = 5000L // 5 seconds
     }
 
     init {
@@ -177,6 +189,20 @@ class GameEngine @Inject constructor(
         shipX = shipX.coerceIn(maxPartHalfWidth, this.screenWidth - maxPartHalfWidth)
         shipY = shipY.coerceIn(totalShipHeight / 2, this.screenHeight - totalShipHeight / 2)
 
+        // Update distance traveled every second
+        if (currentTime - lastDistanceUpdateTime >= 1000) {
+            distanceTraveled += currentSpeed // Increment by speed every second
+            lastDistanceUpdateTime = currentTime
+            Timber.d("Distance traveled: $distanceTraveled")
+
+            // Check for level progression
+            if (distanceTraveled >= distancePerLevel * level) {
+                level++
+                levelUpAnimationStartTime = currentTime // Start animation
+                Timber.d("Level advanced to $level based on distance traveled")
+            }
+        }
+
         if (currentTime - lastScoreUpdateTime >= 1000) {
             currentScore += 10
             lastScoreUpdateTime = currentTime
@@ -210,36 +236,45 @@ class GameEngine @Inject constructor(
             )
             if (checkCollision(powerUpRect)) {
                 when (powerUp.type) {
-                    "power_up" -> fuel = (fuel + 20f).coerceAtMost(fuelCapacity)
+                    "power_up" -> {
+                        fuel = (fuel + 20f).coerceAtMost(fuelCapacity)
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Fuel +20", powerUp.type)
+                    }
                     "shield" -> {
                         shieldActive = true
                         shieldEndTime = currentTime + effectDuration
                         currentFuelConsumption = baseFuelConsumption / 2f
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Shield", powerUp.type)
                         Timber.d("Shield activated, fuel consumption reduced to $currentFuelConsumption")
                     }
                     "speed" -> {
                         speedBoostActive = true
                         speedBoostEndTime = currentTime + effectDuration
                         currentSpeed = baseSpeed * 2f
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Speed Boost", powerUp.type)
                         Timber.d("Speed boost activated, speed increased to $currentSpeed")
                     }
                     "stealth" -> {
                         stealthActive = true
                         stealthEndTime = currentTime + effectDuration
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Stealth", powerUp.type)
                         Timber.d("Stealth activated")
                     }
                     "warp" -> {
                         shipX = Random.nextFloat() * (this.screenWidth - 2 * maxPartHalfWidth) + maxPartHalfWidth
                         shipY = Random.nextFloat() * (this.screenHeight - totalShipHeight) + totalShipHeight / 2
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Warp", powerUp.type)
                         Timber.d("Warp activated, ship teleported to (x=$shipX, y=$shipY)")
                     }
                     "star" -> {
                         currentScore += 50
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
                         Timber.d("Star collected, score increased to $currentScore")
                     }
                     "invincibility" -> {
                         invincibilityActive = true
                         invincibilityEndTime = currentTime + effectDuration
+                        renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Invincibility", powerUp.type)
                         Timber.d("Invincibility activated")
                     }
                 }
@@ -286,7 +321,7 @@ class GameEngine @Inject constructor(
         shieldActive = false
         speedBoostActive = false
         stealthActive = false
-        invincibilityActive = false // Reset invincibility
+        invincibilityActive = false
         currentFuelConsumption = baseFuelConsumption
         currentSpeed = baseSpeed
     }
@@ -419,7 +454,7 @@ class GameEngine @Inject constructor(
     private fun spawnPowerUp(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility") // Added invincibility
+        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility")
         val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random() // 40% chance for fuel
         powerUps.add(PowerUp(x, y, type))
     }
