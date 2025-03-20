@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "534804536113",
+    "project_id": "spaceshipbuilderapp",
+    "storage_bucket": "spaceshipbuilderapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:534804536113:android:621a23436ac74bcf83ae10",
+        "android_client_info": {
+          "package_name": "com.example.spaceshipbuilderapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkZ44m_I0st9WEa1GO8oAel8_Nh7b6WOg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

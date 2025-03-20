@@ -4,6 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
     id("com.google.dagger.hilt.android") version "2.51"
     id("org.jetbrains.kotlin.kapt") version "2.0.21"
+    id("com.google.gms.google-services") version "4.4.2"
 }
 
 android {
@@ -17,14 +18,12 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Define BuildConfig field for DEBUG
         buildConfigField("boolean", "DEBUG", "true")
     }
 
     buildTypes {
         getByName("debug") {
             isDebuggable = true
-            // Optionally override DEBUG for clarity (though defaultConfig's value applies unless overridden)
             buildConfigField("boolean", "DEBUG", "true")
         }
         getByName("release") {
@@ -45,11 +44,10 @@ android {
     }
     buildFeatures {
         compose = true
-        viewBinding = true // Required for ActivityMainBinding
+        viewBinding = true
         buildConfig = true
     }
     sourceSets {
-        // Ensure Kotlin source directory is recognized
         getByName("main") {
             java.srcDirs("src/main/kotlin")
         }
@@ -57,6 +55,7 @@ android {
 }
 
 dependencies {
+    implementation ("com.google.android.gms:play-services-auth:20.7.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.core:core-ktx:1.15.0")
@@ -75,6 +74,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.jakewharton.timber:timber:5.0.1")
+    // Credential Manager API for Sign-In
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation ("com.google.android.libraries.identity.googleid:googleid:1.1.0")
+    // Firebase dependencies
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-firestore-ktx:24.10.0")
+    implementation("com.google.firebase:firebase-analytics-ktx")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

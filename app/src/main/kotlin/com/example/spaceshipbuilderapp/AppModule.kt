@@ -48,4 +48,10 @@ object AppModule {
     fun provideHighscoreManager(@ApplicationContext context: Context): HighscoreManager {
         return HighscoreManager(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideVoiceCommandHandler(@ApplicationContext context: Context): VoiceCommandHandler {
+        return VoiceCommandHandler(context) { /* Dummy callback, overridden in MainActivity */ }
+    }
 }

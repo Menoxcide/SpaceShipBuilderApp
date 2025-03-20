@@ -1,4 +1,17 @@
 <resources>
     <string name="app_name">SpaceShipBuilderApp</string>
     <string name="leaderboard_text">Leaderboard:\nTop Score - 1000\nYour Highscore: %1$d</string>
+    <string name="google_client_id">534804536113-n910ipbd48n9d1p3o3f595sqse56a9h3.apps.googleusercontent.com</string>
+    <string name="leaderboard_title">Leaderboard (Page %1$d/%2$d):\n</string>
+    <string name="score_entry">%1$d, Level %2$d, Distance %3$d</string>
+    <string name="prev_button">Previous</string>
+    <string name="next_button">Next</string>
+    <string name="error_developer">Developer error: Check SHA-1 and Client ID</string>
+    <string name="error_canceled">Sign-in canceled by user</string>
+    <string name="error_signin">Sign-in failed: %s</string>
+    <string name="error_unexpected">Unexpected error: %s</string>
+    <string name="error_launch">Failed to launch sign-in: %s</string>
+    <string name="error_request">Sign-in request failed: %s</string>
+    <string name="error_userdata">Failed to load user data: %s</string>
+    <string name="error_audio_permission">Audio permission denied</string>
 </resources>

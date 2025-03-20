@@ -10,6 +10,7 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import androidx.core.graphics.withSave
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.sin
 import kotlin.random.Random
 import timber.log.Timber
 
@@ -19,8 +20,10 @@ class ParticleSystem(private val context: Context) {
     private val collectionParticles = CopyOnWriteArrayList<CollectionParticle>()
     private val collisionParticles = CopyOnWriteArrayList<CollisionParticle>()
     private val damageTextParticles = CopyOnWriteArrayList<DamageTextParticle>()
-    private val auraParticles = CopyOnWriteArrayList<AuraParticle>()
-    private val powerUpTextParticles = CopyOnWriteArrayList<PowerUpTextParticle>() // New for power-up notifications
+    private val powerUpTextParticles = CopyOnWriteArrayList<PowerUpTextParticle>()
+    private val explosionParticles = CopyOnWriteArrayList<ExplosionParticle>()
+    private val powerUpSpriteParticles = CopyOnWriteArrayList<PowerUpSpriteParticle>()
+    private val scoreTextParticles = CopyOnWriteArrayList<ScoreTextParticle>()
 
     private val exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
     private val exhaustPaint = Paint().apply { isAntiAlias = true }
@@ -29,13 +32,19 @@ class ParticleSystem(private val context: Context) {
     private val damageTextPaint = Paint().apply {
         isAntiAlias = true
         color = Color.RED
-        textSize = 40f // Increased text size
+        textSize = 40f
         textAlign = Paint.Align.CENTER
     }
-    private val auraPaint = Paint().apply {
+    private val powerUpSpritePaint = Paint().apply { isAntiAlias = true }
+    private val explosionPaint = Paint().apply {
         isAntiAlias = true
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
+        color = Color.RED
+    }
+    private val scoreTextPaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 30f
+        color = Color.GREEN
+        textAlign = Paint.Align.CENTER
     }
     private val powerUpTextPaints = mapOf(
         "power_up" to Paint().apply {
@@ -89,9 +98,13 @@ class ParticleSystem(private val context: Context) {
         const val WARP_LIFE_DECAY = 0.03f
         const val COLLECTION_LIFE_DECAY = 0.01f
         const val COLLISION_LIFE_DECAY = 0.02f
-        const val DAMAGE_TEXT_LIFE_DECAY = 0.01f // Slower decay for damage text
-        const val POWER_UP_TEXT_LIFE_DECAY = 0.01f // Same decay as damage text
-        const val AURA_LIFE_DECAY = 0.01f
+        const val DAMAGE_TEXT_LIFE_DECAY = 0.01f
+        const val POWER_UP_TEXT_LIFE_DECAY = 0.02f
+        const val POWER_UP_SPRITE_LIFE_DECAY = 0.005f
+        const val EXPLOSION_PARTICLE_COUNT = 30
+        const val EXPLOSION_LIFE_DECAY = 0.03f
+        const val POWER_UP_SPRITE_COUNT = 5
+        const val SCORE_TEXT_LIFE_DECAY = 0.02f
     }
 
     data class ExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
@@ -138,14 +151,6 @@ class ParticleSystem(private val context: Context) {
         fun isDead() = life <= 0f
     }
 
-    data class AuraParticle(var x: Float, var y: Float, var radius: Float, var life: Float, val color: Int) {
-        fun update() {
-            radius += 1f // Expand slightly
-            life -= AURA_LIFE_DECAY
-        }
-        fun isDead() = life <= 0f
-    }
-
     data class PowerUpTextParticle(var x: Float, var y: Float, var speedY: Float, var life: Float, val text: String, val type: String) {
         fun update() {
             y += speedY
@@ -153,6 +158,48 @@ class ParticleSystem(private val context: Context) {
         }
         fun isDead() = life <= 0f
     }
+
+    data class ExplosionParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float) {
+        fun update() {
+            x += speedX
+            y += speedY
+            life -= EXPLOSION_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class PowerUpSpriteParticle(
+        var x: Float,
+        var y: Float,
+        var bitmap: Bitmap,
+        var scale: Float,
+        var minScale: Float,
+        var maxScale: Float,
+        var life: Float,
+        var phase: Float
+    ) {
+        fun update() {
+            scale = minScale + (maxScale - minScale) * (sin(phase) + 1) / 2
+            phase += 0.05f // Slower pulsation
+            life -= POWER_UP_SPRITE_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class ScoreTextParticle(var x: Float, var y: Float, var speedY: Float, var life: Float, val text: String) {
+        fun update() {
+            y += speedY
+            life -= SCORE_TEXT_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    private val powerUpBitmaps = mapOf(
+        "shield" to BitmapFactory.decodeResource(context.resources, R.drawable.shield_icon),
+        "speed" to BitmapFactory.decodeResource(context.resources, R.drawable.speed_icon),
+        "stealth" to BitmapFactory.decodeResource(context.resources, R.drawable.stealth_icon),
+        "invincibility" to BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
+    )
 
     fun addExhaustParticle(x: Float, y: Float, speedX: Float, speedY: Float) {
         exhaustParticles.add(ExhaustParticle(x, y, speedX, speedY, 1f))
@@ -162,8 +209,9 @@ class ParticleSystem(private val context: Context) {
         warpParticles.add(WarpParticle(x, y, Random.nextFloat() * 4f - 2f, Random.nextFloat() * 4f - 2f, 1f))
     }
 
-    fun addPropulsionParticles(x: Float, y: Float) {
-        addExhaustParticle(x, y, Random.nextFloat() * 2f - 1f, Random.nextFloat() * 5f + 5f)
+    fun addPropulsionParticles(x: Float, y: Float, speedBoostActive: Boolean = false) {
+        val speedMultiplier = if (speedBoostActive) 5f else 1f
+        addExhaustParticle(x, y, Random.nextFloat() * 2f * speedMultiplier - 1f * speedMultiplier, Random.nextFloat() * 5f * speedMultiplier + 5f * speedMultiplier)
     }
 
     fun addCollectionParticles(x: Float, y: Float) {
@@ -221,7 +269,7 @@ class ParticleSystem(private val context: Context) {
                 x = x,
                 y = y,
                 speedY = -2f,
-                life = 1f,
+                life = 1.5f,
                 text = text,
                 type = powerUpType
             )
@@ -229,29 +277,54 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Added power-up text particle at (x=$x, y=$y) with text: $text")
     }
 
-    fun addAuraParticles(x: Float, y: Float, powerUpType: String) {
-        val color = when (powerUpType) {
-            "power_up" -> Color.GREEN
-            "shield" -> Color.BLUE
-            "speed" -> Color.YELLOW
-            "stealth" -> Color.GRAY
-            "warp" -> Color.MAGENTA
-            "star" -> Color.WHITE
-            "invincibility" -> Color.GREEN
-            else -> Color.WHITE
-        }
-        repeat(5) {
-            auraParticles.add(
-                AuraParticle(
+    fun addPowerUpSpriteParticles(x: Float, y: Float, powerUpType: String) {
+        val bitmap = powerUpBitmaps[powerUpType] ?: return
+        repeat(POWER_UP_SPRITE_COUNT) {
+            powerUpSpriteParticles.add(
+                PowerUpSpriteParticle(
                     x = x,
                     y = y,
-                    radius = 20f + it * 10f,
-                    life = 1f,
-                    color = color
+                    bitmap = bitmap,
+                    scale = 0.5f,
+                    minScale = 0.5f,
+                    maxScale = 1.0f,
+                    life = 1.0f,
+                    phase = Random.nextFloat() * 2 * Math.PI.toFloat()
                 )
             )
         }
-        Timber.d("Added ${auraParticles.size} aura particles at (x=$x, y=$y) for $powerUpType")
+        Timber.d("Added ${powerUpSpriteParticles.size} power-up sprite particles at (x=$x, y=$y) for $powerUpType")
+    }
+
+    fun addExplosionParticles(x: Float, y: Float) {
+        repeat(EXPLOSION_PARTICLE_COUNT) {
+            val angle = Random.nextFloat() * 360f
+            val speed = Random.nextFloat() * 10f + 5f
+            explosionParticles.add(
+                ExplosionParticle(
+                    x = x,
+                    y = y,
+                    speedX = kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat() * speed,
+                    speedY = kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat() * speed,
+                    life = 1.0f,
+                    size = Random.nextFloat() * 10f + 5f
+                )
+            )
+        }
+        Timber.d("Added ${explosionParticles.size} explosion particles at (x=$x, y=$y)")
+    }
+
+    fun addScoreTextParticle(x: Float, y: Float, text: String) {
+        scoreTextParticles.add(
+            ScoreTextParticle(
+                x = x,
+                y = y,
+                speedY = -2f,
+                life = 1.5f,
+                text = text
+            )
+        )
+        Timber.d("Added score text particle at (x=$x, y=$y) with text: $text")
     }
 
     fun drawExhaustParticles(canvas: Canvas) {
@@ -331,17 +404,34 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${damageTextParticles.size} damage text particles")
     }
 
-    fun drawAuraParticles(canvas: Canvas) {
-        val particlesToRemove = mutableListOf<AuraParticle>()
-        auraParticles.forEach { particle ->
+    fun drawPowerUpSpriteParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<PowerUpSpriteParticle>()
+        powerUpSpriteParticles.forEach { particle ->
             particle.update()
-            auraPaint.color = particle.color
-            auraPaint.alpha = (particle.life * 255).toInt()
-            canvas.drawCircle(particle.x, particle.y, particle.radius, auraPaint)
+            powerUpSpritePaint.alpha = (particle.life * 191).toInt()
+            val scaledWidth = particle.bitmap.width * particle.scale
+            val scaledHeight = particle.bitmap.height * particle.scale
+            canvas.withSave {
+                canvas.translate(particle.x - scaledWidth / 2, particle.y - scaledHeight / 2)
+                canvas.scale(particle.scale, particle.scale)
+                canvas.drawBitmap(particle.bitmap, 0f, 0f, powerUpSpritePaint)
+            }
             if (particle.isDead()) particlesToRemove.add(particle)
         }
-        auraParticles.removeAll(particlesToRemove)
-        Timber.d("Drawing ${auraParticles.size} aura particles")
+        powerUpSpriteParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${powerUpSpriteParticles.size} power-up sprite particles")
+    }
+
+    fun drawExplosionParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<ExplosionParticle>()
+        explosionParticles.forEach { particle ->
+            particle.update()
+            explosionPaint.alpha = (particle.life * 255).toInt()
+            canvas.drawCircle(particle.x, particle.y, particle.size * particle.life, explosionPaint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        explosionParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${explosionParticles.size} explosion particles")
     }
 
     fun drawPowerUpTextParticles(canvas: Canvas) {
@@ -357,18 +447,36 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${powerUpTextParticles.size} power-up text particles")
     }
 
+    fun drawScoreTextParticles(canvas: Canvas) {
+        val particlesToRemove = mutableListOf<ScoreTextParticle>()
+        scoreTextParticles.forEach { particle ->
+            particle.update()
+            scoreTextPaint.alpha = (particle.life * 255).toInt()
+            canvas.drawText(particle.text, particle.x, particle.y, scoreTextPaint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        scoreTextParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${scoreTextParticles.size} score text particles")
+    }
+
     fun clearParticles() {
         exhaustParticles.clear()
         warpParticles.clear()
         collectionParticles.clear()
         collisionParticles.clear()
         damageTextParticles.clear()
-        auraParticles.clear()
         powerUpTextParticles.clear()
+        explosionParticles.clear()
+        powerUpSpriteParticles.clear()
+        scoreTextParticles.clear()
     }
 
     fun onDestroy() {
         if (!exhaustBitmap.isRecycled) exhaustBitmap.recycle()
         clearParticles()
+    }
+
+    fun getGlowParticleCount(): Int {
+        return powerUpSpriteParticles.size
     }
 }

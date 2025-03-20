@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.PorterDuff
@@ -93,13 +95,13 @@ class Renderer @Inject constructor(
     }
     private val distancePaint = Paint().apply {
         isAntiAlias = true
-        textSize = 40f // Reduced text size to prevent overflow
+        textSize = 40f
         color = Color.YELLOW
         textAlign = Paint.Align.CENTER
     }
     private val scorePaint = Paint().apply {
         isAntiAlias = true
-        textSize = 40f // Match reduced distance text size
+        textSize = 40f
         color = Color.CYAN
         textAlign = Paint.Align.CENTER
     }
@@ -109,25 +111,18 @@ class Renderer @Inject constructor(
         color = Color.GREEN
         textAlign = Paint.Align.CENTER
     }
-    private val shieldAuraPaint = Paint().apply {
-        color = Color.BLUE
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
+    private val shipTintPaint = Paint().apply {
+        isAntiAlias = true
     }
-    private val speedAuraPaint = Paint().apply {
-        color = Color.RED
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
+    private val projectilePaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.WHITE
     }
-    private val stealthAuraPaint = Paint().apply {
-        color = Color.GRAY
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-    }
-    private val invincibilityAuraPaint = Paint().apply {
-        color = Color.YELLOW
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
+    private val scoreTextPaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 30f
+        color = Color.GREEN
+        textAlign = Paint.Align.CENTER
     }
 
     val cockpitBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
@@ -141,8 +136,6 @@ class Renderer @Inject constructor(
     val fuelTankPlaceholderBitmap = createPlaceholderBitmap(fuelTankBitmap)
     val enginePlaceholderBitmap = createPlaceholderBitmap(engineBitmap)
 
-    var currentTheme = "dark"
-
     private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
         return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
             Canvas(this).apply {
@@ -153,32 +146,26 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun setTheme(theme: String) {
-        currentTheme = theme
-        updatePaints()
-    }
-
-    private fun updatePaints() {
-        when (currentTheme) {
-            "dark" -> {
-                backgroundPaint.shader = LinearGradient(0f, 0f, 0f, 2400f, Color.parseColor("#1A0B2E"), Color.parseColor("#4B0082"), Shader.TileMode.CLAMP)
-                graffitiPaint.color = Color.parseColor("#FFFFFF")
-            }
-            "neon" -> {
-                backgroundPaint.shader = LinearGradient(0f, 0f, 0f, 2400f, Color.parseColor("#00FF00"), Color.parseColor("#FF00FF"), Shader.TileMode.CLAMP)
-                graffitiPaint.color = Color.parseColor("#000000")
-            }
-        }
-    }
-
     fun updateAnimationFrame() {
         animationFrame = (animationFrame + 1) % 360
     }
 
-    fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, statusBarHeight: Float) {
+    fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, statusBarHeight: Float, level: Int = 1) {
         this.screenWidth = screenWidth
         this.screenHeight = screenHeight
+
+        val gradientIndex = (level - 1) / 10 % 5
+        val gradients = listOf(
+            Pair(Color.parseColor("#1A0B2E"), Color.parseColor("#4B0082")),
+            Pair(Color.parseColor("#0A2E4B"), Color.parseColor("#008282")),
+            Pair(Color.parseColor("#2E0A4B"), Color.parseColor("#82004B")),
+            Pair(Color.parseColor("#4B2E0A"), Color.parseColor("#828200")),
+            Pair(Color.parseColor("#0A4B2E"), Color.parseColor("#00824B"))
+        )
+        val (startColor, endColor) = gradients[gradientIndex]
+        backgroundPaint.shader = LinearGradient(0f, 0f, 0f, screenHeight, startColor, endColor, Shader.TileMode.CLAMP)
         canvas.drawRect(0f, 0f, screenWidth, screenHeight, backgroundPaint)
+
         if (stars.isEmpty()) {
             repeat(20) {
                 stars.add(
@@ -241,65 +228,57 @@ class Renderer @Inject constructor(
         mergedShipBitmap: Bitmap?,
         placeholders: List<GameEngine.Part>
     ) {
+        when (gameEngine.shipColor) {
+            "red" -> shipTintPaint.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(1.5f, 0.5f, 0.5f, 1f) })
+            "blue" -> shipTintPaint.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(0.5f, 0.5f, 1.5f, 1f) })
+            "green" -> shipTintPaint.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(0.5f, 1.5f, 0.5f, 1f) })
+            else -> shipTintPaint.colorFilter = null
+        }
+
         if (gameState == GameState.FLIGHT && mergedShipBitmap != null) {
             val x = shipX - mergedShipBitmap.width / 2f
             val y = shipY - mergedShipBitmap.height / 2f
-            canvas.drawBitmap(mergedShipBitmap, x, y, null)
-            particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height)
+            canvas.drawBitmap(mergedShipBitmap, x, y, shipTintPaint)
+
+            val centerX = shipX
+            val centerY = shipY
+            val powerUpSprite = when {
+                gameEngine.shieldActive -> shieldBitmap
+                gameEngine.speedBoostActive -> speedBitmap
+                gameEngine.stealthActive -> stealthBitmap
+                gameEngine.invincibilityActive -> invincibilityBitmap
+                else -> null
+            }
+            powerUpSprite?.let {
+                val spriteX = centerX - it.width / 2f
+                val spriteY = centerY - it.height / 2f
+                canvas.drawBitmap(it, spriteX, spriteY, powerUpPaint)
+            }
+
+            particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height, gameEngine.speedBoostActive)
             particleSystem.drawExhaustParticles(canvas)
             particleSystem.drawCollectionParticles(canvas)
             particleSystem.drawCollisionParticles(canvas)
             particleSystem.drawDamageTextParticles(canvas)
-            particleSystem.drawAuraParticles(canvas)
+            particleSystem.drawPowerUpTextParticles(canvas)
+            particleSystem.drawPowerUpSpriteParticles(canvas)
+            particleSystem.drawExplosionParticles(canvas)
+            particleSystem.drawScoreTextParticles(canvas) // Added to show score text
 
-            // Draw aura for persistent power-ups
-            if (gameEngine.shieldActive) {
-                canvas.drawCircle(
-                    shipX,
-                    shipY,
-                    mergedShipBitmap.width / 2f + 10f,
-                    shieldAuraPaint
-                )
-            }
-            if (gameEngine.speedBoostActive) {
-                canvas.drawCircle(
-                    shipX,
-                    shipY,
-                    mergedShipBitmap.width / 2f + 10f,
-                    speedAuraPaint
-                )
-            }
-            if (gameEngine.stealthActive) {
-                canvas.drawCircle(
-                    shipX,
-                    shipY,
-                    mergedShipBitmap.width / 2f + 10f,
-                    stealthAuraPaint
-                )
-            }
-            if (gameEngine.invincibilityActive) {
-                canvas.drawCircle(
-                    shipX,
-                    shipY,
-                    mergedShipBitmap.width / 2f + 10f,
-                    invincibilityAuraPaint
-                )
-            }
-
-            val barWidth = mergedShipBitmap.width * 0.8f
+            val barWidth = fuelTankBitmap.width.toFloat() // Match fuel tank width
             val barHeight = 10f
-            val barX = shipX - barWidth / 2f
-            val hpBarY = y - barHeight - 15f
-            val fuelBarY = hpBarY + barHeight + 5f
+            val hpBarX = x - barWidth - 10f // Left of the ship
+            val fuelBarX = x + mergedShipBitmap.width + 10f // Right of the ship
+            val barY = y + mergedShipBitmap.height / 2f - barHeight / 2f // Centered vertically
             val hpFraction = gameEngine.hp / gameEngine.maxHp
             val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
             val hpBarFilledWidth = barWidth * hpFraction
             val fuelBarFilledWidth = barWidth * fuelFraction
 
-            canvas.drawRect(barX, hpBarY, barX + barWidth, hpBarY + barHeight, barBorderPaint)
-            canvas.drawRect(barX, hpBarY, barX + hpBarFilledWidth, hpBarY + barHeight, hpBarPaint)
-            canvas.drawRect(barX, fuelBarY, barX + barWidth, fuelBarY + barHeight, barBorderPaint)
-            canvas.drawRect(barX, fuelBarY, barX + fuelBarFilledWidth, fuelBarY + barHeight, fuelBarPaint)
+            canvas.drawRect(hpBarX, barY, hpBarX + barWidth, barY + barHeight, barBorderPaint)
+            canvas.drawRect(hpBarX, barY, hpBarX + hpBarFilledWidth, barY + barHeight, hpBarPaint)
+            canvas.drawRect(fuelBarX, barY, fuelBarX + barWidth, barY + barHeight, barBorderPaint)
+            canvas.drawRect(fuelBarX, barY, fuelBarX + fuelBarFilledWidth, barY + barHeight, fuelBarPaint)
         } else if (gameState == GameState.BUILD && shipParts.isNotEmpty()) {
             val placeholderPositions = placeholders.associate { it.type to it.y }
             shipParts.sortedBy { it.y }.forEach { part ->
@@ -310,7 +289,7 @@ class Renderer @Inject constructor(
                     withTranslation(shipX, targetY) {
                         withRotation(part.rotation, xOffset, yOffset) {
                             scale(part.scale, part.scale, xOffset, yOffset)
-                            drawBitmap(part.bitmap, -xOffset, -yOffset, null)
+                            drawBitmap(part.bitmap, -xOffset, -yOffset, shipTintPaint)
                         }
                     }
                 }
@@ -354,30 +333,43 @@ class Renderer @Inject constructor(
                 (asteroid.size * 2).toInt(),
                 true
             )
-            canvas.drawBitmap(scaledBitmap, x, y - asteroid.size, asteroidPaint)
-            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}")
+            canvas.withSave {
+                translate(x + asteroid.size, y)
+                rotate(asteroid.rotation * (180f / Math.PI.toFloat()))
+                drawBitmap(scaledBitmap, -asteroid.size, -asteroid.size, asteroidPaint)
+            }
+            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}, rotation=${asteroid.rotation}")
+        }
+    }
+
+    fun drawProjectiles(canvas: Canvas, projectiles: List<GameEngine.Projectile>, statusBarHeight: Float) {
+        if (BuildConfig.DEBUG) Timber.d("Drawing ${projectiles.size} projectiles")
+        projectiles.forEach { projectile ->
+            canvas.drawCircle(projectile.x, projectile.y, GameEngine.PROJECTILE_SIZE, projectilePaint)
+            if (BuildConfig.DEBUG) Timber.d("Drawing projectile at (x=${projectile.x}, y=${projectile.y})")
         }
     }
 
     fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float) {
         val currentTime = System.currentTimeMillis()
         val textHeight = 40f
-        val startY = statusBarHeight + 20f
+        val startY = statusBarHeight + 50f
         if (gameEngine.gameState == GameState.FLIGHT) {
-            // Distance and score centered at the top
             canvas.drawText("Distance: ${gameEngine.distanceTraveled.toInt()} units", screenWidth / 2f, startY, distancePaint)
             canvas.drawText("Score: ${gameEngine.currentScore}", screenWidth / 2f, startY + textHeight, scorePaint)
-            canvas.drawText("Level: ${gameEngine.level}", 40f, startY + 2 * textHeight, graffitiPaint)
+            canvas.drawText("Level: ${gameEngine.level}", screenWidth / 2f, startY + 2 * textHeight, graffitiPaint)
 
-            // Draw level-up animation if active
             if (gameEngine.levelUpAnimationStartTime > 0L && currentTime - gameEngine.levelUpAnimationStartTime <= GameEngine.LEVEL_UP_ANIMATION_DURATION) {
                 val levelText = "Level ${gameEngine.level}"
                 canvas.drawText(levelText, screenWidth / 2f, screenHeight / 2f, levelUpPaint)
             } else {
-                gameEngine.levelUpAnimationStartTime = 0L // Reset when animation ends
+                gameEngine.levelUpAnimationStartTime = 0L
             }
         }
-        // No text in Build Mode
+    }
+
+    fun addScoreTextParticle(x: Float, y: Float, text: String) {
+        particleSystem.addScoreTextParticle(x, y, text)
     }
 
     fun clearParticles() {

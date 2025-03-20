@@ -1,71 +1,75 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.qualifiers.ApplicationContext
-import org.json.JSONArray
 import timber.log.Timber
 import javax.inject.Inject
+import kotlinx.coroutines.tasks.await
 
 class HighscoreManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("SpaceshipBuilder", Context.MODE_PRIVATE)
+    private val db = FirebaseFirestore.getInstance()
     private val MAX_SCORES = 100
     private val highscores: MutableList<ScoreEntry> = mutableListOf()
 
-    data class ScoreEntry(val name: String, val score: Int) : Comparable<ScoreEntry> {
-        override fun compareTo(other: ScoreEntry): Int = other.score.compareTo(this.score) // Descending order
+    data class ScoreEntry(val userId: String, val name: String, val score: Int, val level: Int, val distance: Float) : Comparable<ScoreEntry> {
+        override fun compareTo(other: ScoreEntry): Int = other.score.compareTo(this.score)
     }
 
-    init {
-        loadHighscores()
-    }
-
-    private fun loadHighscores() {
+    suspend fun initialize(userId: String) {
         try {
-            val jsonString = prefs.getString("highscores", null)
-            if (jsonString != null) {
-                val jsonArray = JSONArray(jsonString)
-                val newScores = mutableListOf<ScoreEntry>()
-                for (i in 0 until jsonArray.length()) {
-                    val jsonObject = jsonArray.getJSONObject(i)
-                    newScores.add(ScoreEntry(jsonObject.getString("name"), jsonObject.getInt("score")))
-                }
-                highscores.clear()
-                highscores.addAll(newScores)
-                highscores.sort() // Sort descending
+            Timber.d("Attempting to load highscores for userId: $userId")
+            val snapshot = db.collection("highscores")
+                .whereEqualTo("userId", userId)
+                .orderBy("score", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                .limit(MAX_SCORES.toLong())
+                .get()
+                .await()
+
+            highscores.clear()
+            for (doc in snapshot.documents) {
+                highscores.add(
+                    ScoreEntry(
+                        doc.getString("userId") ?: userId,
+                        doc.getString("name") ?: "Player",
+                        doc.getLong("score")?.toInt() ?: 0,
+                        doc.getLong("level")?.toInt() ?: 1,
+                        doc.getDouble("distance")?.toFloat() ?: 0f
+                    )
+                )
+            }
+            Timber.d("Loaded ${highscores.size} highscores for user $userId")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to load highscores: ${e.message}")
+            // Instead of throwing, clear highscores and continue
+            highscores.clear()
+            Timber.w("Highscores cleared due to Firestore error")
+        }
+    }
+
+    fun addScore(userId: String, name: String, score: Int, level: Int, distance: Float) {
+        val scoreEntry = hashMapOf(
+            "userId" to userId,
+            "name" to name,
+            "score" to score,
+            "level" to level,
+            "distance" to distance
+        )
+
+        db.collection("highscores").add(scoreEntry)
+            .addOnSuccessListener {
+                highscores.add(ScoreEntry(userId, name, score, level, distance))
+                highscores.sort()
                 if (highscores.size > MAX_SCORES) {
                     highscores.subList(MAX_SCORES, highscores.size).clear()
                 }
+                Timber.d("Added highscore for $userId: score=$score, level=$level, distance=$distance")
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to load highscores, keeping list empty or as-is")
-        }
-    }
-
-    fun addScore(name: String, score: Int) {
-        highscores.add(ScoreEntry(name, score))
-        highscores.sort()
-        if (highscores.size > MAX_SCORES) {
-            highscores.subList(MAX_SCORES, highscores.size).clear()
-        }
-        saveHighscores()
-    }
-
-    private fun saveHighscores() {
-        try {
-            val jsonArray = JSONArray()
-            highscores.forEach { entry ->
-                val jsonObject = org.json.JSONObject()
-                jsonObject.put("name", entry.name)
-                jsonObject.put("score", entry.score)
-                jsonArray.put(jsonObject)
+            .addOnFailureListener { e ->
+                Timber.e(e, "Failed to add highscore for $userId")
             }
-            prefs.edit().putString("highscores", jsonArray.toString()).apply()
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to save highscores")
-        }
     }
 
     fun getHighscore(): Int {

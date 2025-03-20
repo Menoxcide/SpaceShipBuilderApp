@@ -1,16 +1,20 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.RectF
 import android.media.MediaPlayer
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.random.Random
+import kotlinx.coroutines.tasks.await
 
 enum class GameState { BUILD, FLIGHT }
 
@@ -19,18 +23,18 @@ class GameEngine @Inject constructor(
     val renderer: Renderer,
     private val highscoreManager: HighscoreManager
 ) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("SpaceshipBuilder", Context.MODE_PRIVATE)
+    private val db = FirebaseFirestore.getInstance()
     var gameState: GameState = GameState.BUILD
         set(value) {
             if (field == value) return
             field = value
             if (value == GameState.FLIGHT) {
                 onLaunchListener?.invoke(true)
-                distanceTraveled = 0f // Reset distance when entering Flight Mode
-                levelUpAnimationStartTime = 0L // Reset animation timestamp
-                // Spawn ship in the center of the screen
+                distanceTraveled = 0f
+                levelUpAnimationStartTime = 0L
                 shipX = screenWidth / 2f
                 shipY = screenHeight / 2f
+                applyShipColorEffects()
             } else {
                 mergedShipBitmap?.recycle()
                 mergedShipBitmap = null
@@ -47,8 +51,9 @@ class GameEngine @Inject constructor(
                 parts.clear()
                 onLaunchListener?.invoke(false)
                 resetPowerUpEffects()
-                level = 1 // Reset level to 1 when reverting to Build Mode
+                level = 1
                 currentScore = 0
+                projectiles.clear() // Clear projectiles when returning to BUILD mode
             }
         }
 
@@ -59,11 +64,21 @@ class GameEngine @Inject constructor(
     var fuelCapacity = 100f
     var hp = 100f
     var maxHp = 100f
-    var level = 1 // Progression level
-    var playerName: String = "Player" // Default name
+    var level = 1
+    var playerName: String = "Player"
     private var onLaunchListener: ((Boolean) -> Unit)? = null
     var onPowerUpCollectedListener: ((Float, Float) -> Unit)? = null
     var currentScore = 0
+
+    var shipColor: String = "default"
+        set(value) {
+            field = value
+            Timber.d("Ship color set to $value")
+            if (gameState == GameState.FLIGHT) applyShipColorEffects()
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
 
     var shipX: Float = 0f
     var shipY: Float = 0f
@@ -73,7 +88,8 @@ class GameEngine @Inject constructor(
 
     val powerUps = mutableListOf<PowerUp>()
     val asteroids = mutableListOf<Asteroid>()
-    private val powerUpSpawnRateBase = 2000L // Adjusted for less frequent fuel
+    val projectiles = mutableListOf<Projectile>()
+    private val powerUpSpawnRateBase = 2000L
     private val asteroidSpawnRateBase = 1500L
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
@@ -104,19 +120,53 @@ class GameEngine @Inject constructor(
     private var baseSpeed = 5f
     private var currentSpeed = baseSpeed
 
-    // Distance tracking
     var distanceTraveled = 0f
     private val distancePerLevel = 100f
-    var levelUpAnimationStartTime = 0L // Timestamp for level-up animation
+    var levelUpAnimationStartTime = 0L
+    private var userId: String? = null
 
     companion object {
         const val ALIGNMENT_THRESHOLD = 75f
         const val PANEL_HEIGHT = 150f
-        const val LEVEL_UP_ANIMATION_DURATION = 5000L // 5 seconds
+        const val LEVEL_UP_ANIMATION_DURATION = 5000L
+        const val GIANT_ASTEROID_PROBABILITY = 0.1f
+        const val GIANT_ASTEROID_SCALE = 2.0f
+        const val SMALL_ASTEROID_COUNT = 3
+        const val EXPLOSION_CHANCE = 0.1f
+        const val MAX_AURA_PARTICLES = 200
+        const val PROJECTILE_SPEED = 10f
+        const val PROJECTILE_SIZE = 5f
+        const val ASTEROID_DESTROY_POINTS = 20
     }
 
-    init {
-        loadPersistentData()
+    suspend fun loadUserData(userId: String) {
+        this.userId = userId
+        try {
+            Timber.d("Attempting to load user data for userId: $userId")
+            val doc = db.collection("users").document(userId).get().await()
+            if (doc.exists()) {
+                level = doc.getLong("level")?.toInt() ?: 1
+                shipColor = doc.getString("shipColor") ?: "default"
+                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor")
+            } else {
+                // Initialize default data for new user
+                Timber.d("User data not found for $userId, initializing with defaults")
+                val userData = hashMapOf(
+                    "level" to 1,
+                    "shipColor" to "default"
+                )
+                db.collection("users").document(userId).set(userData).await()
+                level = 1
+                shipColor = "default"
+                Timber.d("Initialized new user data for $userId")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to load user data from Firestore: ${e.message}")
+            // Instead of throwing, set default values and continue
+            level = 1
+            shipColor = "default"
+            Timber.w("Using default user data due to Firestore error: level=$level, shipColor=$shipColor")
+        }
     }
 
     fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float = this.statusBarHeight) {
@@ -153,7 +203,7 @@ class GameEngine @Inject constructor(
         Timber.d("Placeholders initialized: cockpitY=$cockpitY, fuelTankY=$fuelTankY, engineY=$engineY")
     }
 
-    fun update(screenWidth: Float, screenHeight: Float) {
+    fun update(screenWidth: Float, screenHeight: Float, userId: String) {
         if (gameState != GameState.FLIGHT) {
             Timber.d("GameEngine update skipped: gameState=$gameState")
             return
@@ -189,16 +239,14 @@ class GameEngine @Inject constructor(
         shipX = shipX.coerceIn(maxPartHalfWidth, this.screenWidth - maxPartHalfWidth)
         shipY = shipY.coerceIn(totalShipHeight / 2, this.screenHeight - totalShipHeight / 2)
 
-        // Update distance traveled every second
         if (currentTime - lastDistanceUpdateTime >= 1000) {
-            distanceTraveled += currentSpeed // Increment by speed every second
+            distanceTraveled += currentSpeed
             lastDistanceUpdateTime = currentTime
             Timber.d("Distance traveled: $distanceTraveled")
 
-            // Check for level progression
             if (distanceTraveled >= distancePerLevel * level) {
                 level++
-                levelUpAnimationStartTime = currentTime // Start animation
+                levelUpAnimationStartTime = currentTime
                 Timber.d("Level advanced to $level based on distance traveled")
             }
         }
@@ -208,9 +256,8 @@ class GameEngine @Inject constructor(
             lastScoreUpdateTime = currentTime
         }
 
-        // Adjust spawn rates based on level
-        val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.05f)).toLong() // Slower with level
-        val asteroidSpawnRate = (asteroidSpawnRateBase / (1 + level * 0.1f)).toLong() // Faster with level
+        val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.05f)).toLong()
+        val asteroidSpawnRate = (asteroidSpawnRateBase / (1 + level * 0.1f)).toLong()
 
         if (currentTime - lastPowerUpSpawnTime >= powerUpSpawnRate) {
             spawnPowerUp(this.screenWidth)
@@ -225,10 +272,41 @@ class GameEngine @Inject constructor(
         }
 
         powerUps.forEach { it.update(this.screenHeight) }
-        asteroids.forEach { it.update(this.screenHeight, level) }
+        projectiles.forEach { it.update() }
+
+        val asteroidsCopy = asteroids.toMutableList()
+        asteroidsCopy.forEach { it.update(this.screenWidth, this.screenHeight, level) }
 
         val powerUpsToRemove = mutableListOf<PowerUp>()
         val asteroidsToRemove = mutableListOf<Asteroid>()
+        val projectilesToRemove = mutableListOf<Projectile>()
+
+        // Check for projectile-asteroid collisions
+        for (projectile in projectiles) {
+            val projectileRect = RectF(
+                projectile.x - PROJECTILE_SIZE,
+                projectile.y - PROJECTILE_SIZE,
+                projectile.x + PROJECTILE_SIZE,
+                projectile.y + PROJECTILE_SIZE
+            )
+            for (asteroid in asteroidsCopy) {
+                val asteroidRect = RectF(
+                    asteroid.x - asteroid.size,
+                    asteroid.y - asteroid.size,
+                    asteroid.x + asteroid.size,
+                    asteroid.y + asteroid.size
+                )
+                if (projectileRect.intersect(asteroidRect)) {
+                    asteroidsToRemove.add(asteroid)
+                    projectilesToRemove.add(projectile)
+                    currentScore += ASTEROID_DESTROY_POINTS
+                    renderer.particleSystem.addExplosionParticles(asteroid.x, asteroid.y)
+                    renderer.particleSystem.addScoreTextParticle(asteroid.x, asteroid.y, "+$ASTEROID_DESTROY_POINTS")
+                    Timber.d("Projectile hit asteroid at (x=${asteroid.x}, y=${asteroid.y}), score increased by $ASTEROID_DESTROY_POINTS to $currentScore")
+                }
+            }
+        }
+
         for (powerUp in powerUps) {
             val powerUpRect = RectF(
                 powerUp.x - 20f, powerUp.y - 20f,
@@ -239,53 +317,54 @@ class GameEngine @Inject constructor(
                     "power_up" -> {
                         fuel = (fuel + 20f).coerceAtMost(fuelCapacity)
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Fuel +20", powerUp.type)
+                        Timber.d("Added power-up text for Fuel +20 at (x=${powerUp.x}, y=${powerUp.y})")
                     }
                     "shield" -> {
                         shieldActive = true
                         shieldEndTime = currentTime + effectDuration
                         currentFuelConsumption = baseFuelConsumption / 2f
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Shield", powerUp.type)
-                        Timber.d("Shield activated, fuel consumption reduced to $currentFuelConsumption")
+                        Timber.d("Added power-up text for Shield at (x=${powerUp.x}, y=${powerUp.y})")
                     }
                     "speed" -> {
                         speedBoostActive = true
                         speedBoostEndTime = currentTime + effectDuration
-                        currentSpeed = baseSpeed * 2f
+                        currentSpeed = baseSpeed * 5f
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Speed Boost", powerUp.type)
-                        Timber.d("Speed boost activated, speed increased to $currentSpeed")
+                        Timber.d("Added power-up text for Speed Boost at (x=${powerUp.x}, y=${powerUp.y}) with 5x speed")
                     }
                     "stealth" -> {
                         stealthActive = true
-                        stealthEndTime = currentTime + effectDuration
+                        shieldEndTime = currentTime + effectDuration
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Stealth", powerUp.type)
-                        Timber.d("Stealth activated")
+                        Timber.d("Added power-up text for Stealth at (x=${powerUp.x}, y=${powerUp.y})")
                     }
                     "warp" -> {
                         shipX = Random.nextFloat() * (this.screenWidth - 2 * maxPartHalfWidth) + maxPartHalfWidth
                         shipY = Random.nextFloat() * (this.screenHeight - totalShipHeight) + totalShipHeight / 2
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Warp", powerUp.type)
-                        Timber.d("Warp activated, ship teleported to (x=$shipX, y=$shipY)")
+                        Timber.d("Added power-up text for Warp at (x=${powerUp.x}, y=${powerUp.y})")
                     }
                     "star" -> {
                         currentScore += 50
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
-                        Timber.d("Star collected, score increased to $currentScore")
+                        Timber.d("Added power-up text for Star +50 at (x=${powerUp.x}, y=${powerUp.y})")
                     }
                     "invincibility" -> {
                         invincibilityActive = true
                         invincibilityEndTime = currentTime + effectDuration
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Invincibility", powerUp.type)
-                        Timber.d("Invincibility activated")
+                        Timber.d("Added power-up text for Invincibility at (x=${powerUp.x}, y=${powerUp.y})")
                     }
                 }
-                renderer.particleSystem.addAuraParticles(shipX, shipY, powerUp.type)
+                renderer.particleSystem.addPowerUpSpriteParticles(shipX, shipY, powerUp.type)
                 powerUpsToRemove.add(powerUp)
                 Timber.d("Collected ${powerUp.type} power-up")
                 onPowerUpCollectedListener?.invoke(powerUp.x, powerUp.y)
                 playPowerUpSound()
             }
         }
-        for (asteroid in asteroids) {
+        for (asteroid in asteroidsCopy) {
             val asteroidRect = RectF(
                 asteroid.x - asteroid.size, asteroid.y - asteroid.size,
                 asteroid.x + asteroid.size, asteroid.y + asteroid.size
@@ -298,19 +377,27 @@ class GameEngine @Inject constructor(
                 playCollisionSound()
                 Timber.d("Hit asteroid, HP decreased to $hp")
             }
+            if (asteroid is GiantAsteroid) {
+                if (Random.nextFloat() < EXPLOSION_CHANCE) {
+                    asteroid.explode(this)
+                }
+            }
         }
         powerUps.removeAll(powerUpsToRemove)
         asteroids.removeAll(asteroidsToRemove)
+        projectiles.removeAll(projectilesToRemove)
 
         powerUps.removeAll { it.isExpired(this.screenHeight) }
         asteroids.removeAll { it.isOffScreen(this.screenHeight) }
-        Timber.d("After cleanup: ${powerUps.size} power-ups, ${asteroids.size} asteroids, HP: $hp, Fuel: $fuel")
+        projectiles.removeAll { it.isOffScreen() }
+        Timber.d("After cleanup: ${powerUps.size} power-ups, ${asteroids.size} asteroids, ${projectiles.size} projectiles, HP: $hp, Fuel: $fuel")
 
         if (fuel <= 0 || hp <= 0) {
-            highscoreManager.addScore(playerName, currentScore) // Save with name
+            highscoreManager.addScore(userId, playerName, currentScore, level, distanceTraveled)
             gameState = GameState.BUILD
             powerUps.clear()
             asteroids.clear()
+            projectiles.clear()
             resetPowerUpEffects()
             hp = maxHp
             fuel = 0f
@@ -322,8 +409,7 @@ class GameEngine @Inject constructor(
         speedBoostActive = false
         stealthActive = false
         invincibilityActive = false
-        currentFuelConsumption = baseFuelConsumption
-        currentSpeed = baseSpeed
+        applyShipColorEffects()
     }
 
     private fun checkCollision(rect: RectF): Boolean {
@@ -370,6 +456,13 @@ class GameEngine @Inject constructor(
         }
     }
 
+    fun spawnProjectile() {
+        // Spawn projectile from the top of the ship (cockpit position)
+        val projectileX = shipX
+        val projectileY = shipY - (mergedShipBitmap?.height ?: 0) / 2f
+        projectiles.add(Projectile(projectileX, projectileY))
+    }
+
     fun rotatePart(partType: String) {
         parts.find { it.type == partType }?.let {
             it.rotation = (it.rotation + 90f) % 360f
@@ -377,12 +470,26 @@ class GameEngine @Inject constructor(
         } ?: Timber.w("Part $partType not found")
     }
 
+    private fun applyShipColorEffects() {
+        currentFuelConsumption = baseFuelConsumption
+        currentSpeed = baseSpeed
+        when (shipColor) {
+            "red" -> currentSpeed = baseSpeed * 1.5f
+            "blue" -> {
+                shieldActive = true
+                shieldEndTime = Long.MAX_VALUE
+            }
+            "green" -> currentFuelConsumption = baseFuelConsumption * 0.5f
+        }
+        Timber.d("Applied ship color effects: speed=$currentSpeed, fuelConsumption=$currentFuelConsumption, shield=$shieldActive")
+    }
+
     fun moveShip(direction: Int) {
         when (direction) {
-            1 -> shipY -= currentSpeed // Up
-            2 -> shipX += currentSpeed // Right
-            3 -> shipY += currentSpeed // Down
-            4 -> shipX -= currentSpeed // Left
+            1 -> shipY -= currentSpeed
+            2 -> shipX += currentSpeed
+            3 -> shipY += currentSpeed
+            4 -> shipX -= currentSpeed
         }
         Timber.d("Moved ship with speed $currentSpeed to (x=$shipX, y=$shipY)")
     }
@@ -434,12 +541,18 @@ class GameEngine @Inject constructor(
                 sortedParts[2].type == "engine"
     }
 
-    private fun loadPersistentData() {
-        level = prefs.getInt("level", 1) // Load saved level
-    }
-
-    private fun savePersistentData() {
-        prefs.edit().putInt("level", level).apply()
+    private fun savePersistentData(userId: String) {
+        val userData = hashMapOf(
+            "level" to level,
+            "shipColor" to shipColor
+        )
+        db.collection("users").document(userId).set(userData)
+            .addOnSuccessListener {
+                Timber.d("Saved user data for $userId: level=$level, shipColor=$shipColor")
+            }
+            .addOnFailureListener { e ->
+                Timber.e(e, "Failed to save user data for $userId")
+            }
     }
 
     fun setLaunchListener(listener: (Boolean) -> Unit) {
@@ -455,15 +568,19 @@ class GameEngine @Inject constructor(
         val x = Random.nextFloat() * screenWidth
         val y = 0f
         val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility")
-        val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random() // 40% chance for fuel
+        val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random()
         powerUps.add(PowerUp(x, y, type))
     }
 
     private fun spawnAsteroid(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
-        val y = 0f
-        val size = if (Random.nextFloat() < 0.2f * (level / 10f)) 50f else 30f // 20% chance for big asteroid, increases with level
-        asteroids.add(Asteroid(x, y, size))
+        val y = -screenHeight * 0.1f
+        if (Random.nextFloat() < GIANT_ASTEROID_PROBABILITY) {
+            asteroids.add(GiantAsteroid(x, y, 30f * GIANT_ASTEROID_SCALE))
+        } else {
+            asteroids.add(Asteroid(x, y, 30f))
+        }
+        Timber.d("Spawned asteroid at (x=$x, y=$y) with size=${if (Random.nextFloat() < GIANT_ASTEROID_PROBABILITY) 60f else 30f}")
     }
 
     private fun playPowerUpSound() {
@@ -499,7 +616,9 @@ class GameEngine @Inject constructor(
         mediaPlayer = null
         mergedShipBitmap?.recycle()
         mergedShipBitmap = null
-        savePersistentData() // Save level on destroy
+        if (userId != null) {
+            savePersistentData(userId!!)
+        }
     }
 
     data class Part(val type: String, val bitmap: Bitmap, var x: Float, var y: Float, var rotation: Float, var scale: Float = 1f)
@@ -516,15 +635,44 @@ class GameEngine @Inject constructor(
         }
     }
 
-    data class Asteroid(var x: Float, var y: Float, val size: Float) {
-        fun update(screenHeight: Float, level: Int) {
-            y += 7f + level * 0.2f // Faster with level
+    data class Projectile(var x: Float, var y: Float) {
+        fun update() {
+            y -= PROJECTILE_SPEED // Move upward
         }
 
-        fun isOffScreen(screenHeight: Float): Boolean {
-            val offScreen = y > screenHeight
+        fun isOffScreen(): Boolean {
+            val offScreen = y < -PROJECTILE_SIZE
+            if (offScreen) Timber.d("Projectile off-screen at y=$y")
+            return offScreen
+        }
+    }
+
+    open class Asteroid(var x: Float, var y: Float, var size: Float, var rotation: Float = 0f, var angularVelocity: Float = Random.nextFloat() * 0.1f) {
+        open fun update(screenWidth: Float, screenHeight: Float, level: Int) {
+            val radius = screenWidth / 8f
+            val angle = (System.currentTimeMillis() % 10000) / 10000f * 2 * Math.PI.toFloat()
+            val speed = 15f + level * 0.3f
+            x += cos(angle) * speed
+            y += sin(angle) * speed + speed
+            rotation += angularVelocity
+            if (y > screenHeight + size) isOffScreen(screenHeight)
+        }
+
+        open fun isOffScreen(screenHeight: Float): Boolean {
+            val offScreen = y > screenHeight + size
             if (offScreen) Timber.d("Asteroid off-screen at y=$y, screenHeight=$screenHeight")
             return offScreen
+        }
+    }
+
+    class GiantAsteroid(x: Float, y: Float, size: Float) : Asteroid(x, y, size * GIANT_ASTEROID_SCALE, 0f, 0.15f) {
+        fun explode(gameEngine: GameEngine) {
+            Timber.d("Giant asteroid exploded at (x=$x, y=$y)")
+            gameEngine.renderer.particleSystem.addExplosionParticles(x, y)
+            repeat(SMALL_ASTEROID_COUNT) {
+                gameEngine.asteroids.add(Asteroid(x, y, size / 2f, Random.nextFloat() * 360f, Random.nextFloat() * 0.2f))
+            }
+            gameEngine.asteroids.remove(this)
         }
     }
 }

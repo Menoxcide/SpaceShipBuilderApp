@@ -69,16 +69,11 @@ class BuildView @Inject constructor(
         if (BuildConfig.DEBUG) Timber.d("Selected part set to ${part.type} at (x=${part.x}, y=${part.y})")
     }
 
-    fun rotatePart(partType: String) {
-        gameEngine.rotatePart(partType)
-        invalidate()
-    }
-
     fun launchShip(): Boolean {
         val success = gameEngine.launchShip(screenWidth, screenHeight)
         if (success) {
             gameEngine.gameState = GameState.FLIGHT
-            visibility = View.GONE
+            isVisible = false
             if (BuildConfig.DEBUG) Timber.d("BuildView hidden, launching to Flight mode")
         }
         invalidate()
@@ -93,14 +88,14 @@ class BuildView @Inject constructor(
         super.onDraw(canvas)
         Timber.d("onDraw called, visibility=$isVisible, gameState=${gameState}")
 
-        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
+        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
         renderer.drawPlaceholders(canvas, gameEngine.placeholders)
         renderer.drawParts(canvas, gameEngine.parts)
         gameEngine.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
         renderer.drawStats(canvas, gameEngine, statusBarHeight)
         renderer.drawShip(
             canvas,
-            gameEngine, // Pass gameEngine here
+            gameEngine,
             gameEngine.parts,
             screenWidth,
             screenHeight,

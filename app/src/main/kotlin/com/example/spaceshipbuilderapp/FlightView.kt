@@ -23,6 +23,9 @@ class FlightView @Inject constructor(
     private var statusBarHeight: Float = 0f
     private var isDragging = false
     private var updateRunnable: Runnable? = null
+    private var userId: String? = null
+    private var lastProjectileSpawnTime = 0L
+    private val projectileSpawnInterval = 1000L // 1 second interval
 
     init {
         if (BuildConfig.DEBUG) Timber.d("FlightView initialized")
@@ -40,6 +43,10 @@ class FlightView @Inject constructor(
     fun setStatusBarHeight(height: Float) {
         statusBarHeight = height
         if (BuildConfig.DEBUG) Timber.d("FlightView status bar height set to: $height")
+    }
+
+    fun setUserId(userId: String) {
+        this.userId = userId
     }
 
     fun setGameMode(mode: GameState) {
@@ -66,7 +73,7 @@ class FlightView @Inject constructor(
         }
         super.onDraw(canvas)
         Timber.d("onDraw called, visibility=$visibility, gameState=${gameState}")
-        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight)
+        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
         renderer.drawShip(
             canvas,
             gameEngine,
@@ -81,6 +88,7 @@ class FlightView @Inject constructor(
         )
         renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
+        renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight)
         renderer.drawStats(canvas, gameEngine, statusBarHeight)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
     }
@@ -108,6 +116,13 @@ class FlightView @Inject constructor(
                 if (isDragging) {
                     gameEngine.shipX = event.rawX.coerceIn(0f + (gameEngine.mergedShipBitmap?.width ?: 0) / 2f, screenWidth - (gameEngine.mergedShipBitmap?.width ?: 0) / 2f)
                     gameEngine.shipY = event.rawY.coerceIn(0f + (gameEngine.mergedShipBitmap?.height ?: 0) / 2f, screenHeight - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f)
+                    // Spawn projectiles while dragging
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastProjectileSpawnTime >= projectileSpawnInterval) {
+                        gameEngine.spawnProjectile()
+                        lastProjectileSpawnTime = currentTime
+                        Timber.d("Spawned projectile at (x=${gameEngine.shipX}, y=${gameEngine.shipY - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f})")
+                    }
                     if (BuildConfig.DEBUG) Timber.d("Ship moved to (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
                     invalidate()
                 }
@@ -115,6 +130,7 @@ class FlightView @Inject constructor(
             }
             MotionEvent.ACTION_UP -> {
                 isDragging = false
+                if (BuildConfig.DEBUG) Timber.d("Stopped dragging ship")
                 true
             }
             else -> false
@@ -126,7 +142,7 @@ class FlightView @Inject constructor(
         updateRunnable = object : Runnable {
             override fun run() {
                 if (gameState == GameState.FLIGHT && visibility == View.VISIBLE) {
-                    gameEngine.update(screenWidth, screenHeight)
+                    gameEngine.update(screenWidth, screenHeight, userId ?: "default")
                     invalidate()
                     if (BuildConfig.DEBUG) Timber.d("FlightView update loop: gameState=${gameState}, invalidated")
                     postDelayed(this, 16)
