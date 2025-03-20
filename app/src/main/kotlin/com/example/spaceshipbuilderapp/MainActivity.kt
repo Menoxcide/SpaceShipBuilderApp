@@ -221,6 +221,7 @@ class MainActivity : AppCompatActivity() {
                 binding.flightView.isVisible = isLaunching
                 binding.flightView.isEnabled = isLaunching
                 binding.playerNameInput.isVisible = false
+                binding.leaderboardButton.isVisible = !isLaunching // Hide in flight mode
                 if (isLaunching) {
                     binding.flightView.requestFocus()
                     binding.flightView.setGameMode(GameState.FLIGHT)

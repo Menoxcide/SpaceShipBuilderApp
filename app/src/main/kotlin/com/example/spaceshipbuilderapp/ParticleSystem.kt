@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.core.graphics.withSave
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.sin
@@ -49,45 +50,52 @@ class ParticleSystem(private val context: Context) {
     private val powerUpTextPaints = mapOf(
         "power_up" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.YELLOW
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         },
         "shield" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.BLUE
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         },
         "speed" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.RED
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         },
         "stealth" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.GRAY
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         },
         "warp" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.MAGENTA
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         },
         "star" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.WHITE
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         },
         "invincibility" to Paint().apply {
             isAntiAlias = true
-            textSize = 40f
+            textSize = 50f
             color = Color.GREEN
             textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
     )
 
@@ -180,7 +188,7 @@ class ParticleSystem(private val context: Context) {
     ) {
         fun update() {
             scale = minScale + (maxScale - minScale) * (sin(phase) + 1) / 2
-            phase += 0.05f // Slower pulsation
+            phase += 0.05f
             life -= POWER_UP_SPRITE_LIFE_DECAY
         }
         fun isDead() = life <= 0f

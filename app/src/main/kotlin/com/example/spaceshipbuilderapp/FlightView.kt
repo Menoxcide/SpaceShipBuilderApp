@@ -89,6 +89,8 @@ class FlightView @Inject constructor(
         renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
         renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight)
+        renderer.drawEnemyShips(canvas, gameEngine.enemyShips, statusBarHeight)
+        renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
         renderer.drawStats(canvas, gameEngine, statusBarHeight)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
     }
@@ -116,7 +118,6 @@ class FlightView @Inject constructor(
                 if (isDragging) {
                     gameEngine.shipX = event.rawX.coerceIn(0f + (gameEngine.mergedShipBitmap?.width ?: 0) / 2f, screenWidth - (gameEngine.mergedShipBitmap?.width ?: 0) / 2f)
                     gameEngine.shipY = event.rawY.coerceIn(0f + (gameEngine.mergedShipBitmap?.height ?: 0) / 2f, screenHeight - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f)
-                    // Spawn projectiles while dragging
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastProjectileSpawnTime >= projectileSpawnInterval) {
                         gameEngine.spawnProjectile()

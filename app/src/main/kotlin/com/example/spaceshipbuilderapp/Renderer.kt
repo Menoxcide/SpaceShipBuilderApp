@@ -47,6 +47,8 @@ class Renderer @Inject constructor(
         ?: throw IllegalStateException("Asteroid bitmap not found")
     private val invincibilityBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
         ?: throw IllegalStateException("Invincibility bitmap not found")
+    private val enemyShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
+        ?: throw IllegalStateException("Enemy ship bitmap not found")
 
     data class Star(
         var x: Float,
@@ -71,6 +73,7 @@ class Renderer @Inject constructor(
         color = Color.parseColor("#FFFFFF")
         style = Paint.Style.FILL_AND_STROKE
         strokeWidth = 3f
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
     }
     private val powerUpPaint = Paint().apply {
         isAntiAlias = true
@@ -82,34 +85,51 @@ class Renderer @Inject constructor(
     private val hpBarPaint = Paint().apply {
         isAntiAlias = true
         color = Color.GREEN
+        style = Paint.Style.FILL
+        setShadowLayer(2f, 1f, 1f, Color.BLACK) // Subtle shadow for depth
     }
     private val fuelBarPaint = Paint().apply {
         isAntiAlias = true
         color = Color.BLUE
+        style = Paint.Style.FILL
+        setShadowLayer(2f, 1f, 1f, Color.BLACK) // Subtle shadow for depth
     }
     private val barBorderPaint = Paint().apply {
         isAntiAlias = true
-        color = Color.WHITE
+        color = Color.argb(200, 255, 255, 255) // Slightly transparent white
         style = Paint.Style.STROKE
         strokeWidth = 2f
+        setShadowLayer(2f, 1f, 1f, Color.BLACK) // Subtle shadow for depth
     }
     private val distancePaint = Paint().apply {
         isAntiAlias = true
         textSize = 40f
         color = Color.YELLOW
         textAlign = Paint.Align.CENTER
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 2f
+        strokeCap = Paint.Cap.ROUND
     }
     private val scorePaint = Paint().apply {
         isAntiAlias = true
         textSize = 40f
         color = Color.CYAN
         textAlign = Paint.Align.CENTER
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 2f
+        strokeCap = Paint.Cap.ROUND
     }
     private val levelUpPaint = Paint().apply {
         isAntiAlias = true
         textSize = 100f
         color = Color.GREEN
         textAlign = Paint.Align.CENTER
+        setShadowLayer(6f, 3f, 3f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 4f
+        strokeCap = Paint.Cap.ROUND
     }
     private val shipTintPaint = Paint().apply {
         isAntiAlias = true
@@ -263,22 +283,28 @@ class Renderer @Inject constructor(
             particleSystem.drawPowerUpTextParticles(canvas)
             particleSystem.drawPowerUpSpriteParticles(canvas)
             particleSystem.drawExplosionParticles(canvas)
-            particleSystem.drawScoreTextParticles(canvas) // Added to show score text
+            particleSystem.drawScoreTextParticles(canvas)
 
-            val barWidth = fuelTankBitmap.width.toFloat() // Match fuel tank width
-            val barHeight = 10f
-            val hpBarX = x - barWidth - 10f // Left of the ship
-            val fuelBarX = x + mergedShipBitmap.width + 10f // Right of the ship
-            val barY = y + mergedShipBitmap.height / 2f - barHeight / 2f // Centered vertically
+            // Draw sleek HP and Fuel bars
+            val barWidth = 8f // Thinner bars for a sleeker look
+            val offset = 2f // Closer to the ship
+            val fuelTankHeight = fuelTankBitmap.height.toFloat() // Match fuel tank height
+            val fuelTankTop = y + cockpitBitmap.height // Fuel tank starts after cockpit
+            val fuelTankBottom = fuelTankTop + fuelTankHeight
+            val hpBarX = x - barWidth - offset
+            val fuelBarX = x + mergedShipBitmap.width + offset
             val hpFraction = gameEngine.hp / gameEngine.maxHp
             val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
-            val hpBarFilledWidth = barWidth * hpFraction
-            val fuelBarFilledWidth = barWidth * fuelFraction
+            val hpFilledHeight = fuelTankHeight * hpFraction
+            val fuelFilledHeight = fuelTankHeight * fuelFraction
 
-            canvas.drawRect(hpBarX, barY, hpBarX + barWidth, barY + barHeight, barBorderPaint)
-            canvas.drawRect(hpBarX, barY, hpBarX + hpBarFilledWidth, barY + barHeight, hpBarPaint)
-            canvas.drawRect(fuelBarX, barY, fuelBarX + barWidth, barY + barHeight, barBorderPaint)
-            canvas.drawRect(fuelBarX, barY, fuelBarX + fuelBarFilledWidth, barY + barHeight, fuelBarPaint)
+            // Draw borders
+            canvas.drawRect(hpBarX, fuelTankTop, hpBarX + barWidth, fuelTankBottom, barBorderPaint)
+            canvas.drawRect(fuelBarX, fuelTankTop, fuelBarX + barWidth, fuelTankBottom, barBorderPaint)
+
+            // Draw filled parts (from bottom up)
+            canvas.drawRect(hpBarX, fuelTankBottom - hpFilledHeight, hpBarX + barWidth, fuelTankBottom, hpBarPaint)
+            canvas.drawRect(fuelBarX, fuelTankBottom - fuelFilledHeight, fuelBarX + barWidth, fuelTankBottom, fuelBarPaint)
         } else if (gameState == GameState.BUILD && shipParts.isNotEmpty()) {
             val placeholderPositions = placeholders.associate { it.type to it.y }
             shipParts.sortedBy { it.y }.forEach { part ->
@@ -350,6 +376,23 @@ class Renderer @Inject constructor(
         }
     }
 
+    fun drawEnemyShips(canvas: Canvas, enemyShips: List<GameEngine.EnemyShip>, statusBarHeight: Float) {
+        if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyShips.size} enemy ships")
+        enemyShips.forEach { enemy ->
+            val scaledBitmap = Bitmap.createScaledBitmap(enemyShipBitmap, 100, 100, true)
+            canvas.drawBitmap(scaledBitmap, enemy.x - 50f, enemy.y - 50f, asteroidPaint)
+            if (BuildConfig.DEBUG) Timber.d("Drawing enemy ship at (x=${enemy.x}, y=${enemy.y})")
+        }
+    }
+
+    fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<GameEngine.Projectile>, statusBarHeight: Float) {
+        if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyProjectiles.size} enemy projectiles")
+        enemyProjectiles.forEach { projectile ->
+            canvas.drawCircle(projectile.x, projectile.y, GameEngine.PROJECTILE_SIZE, projectilePaint)
+            if (BuildConfig.DEBUG) Timber.d("Drawing enemy projectile at (x=${projectile.x}, y=${projectile.y})")
+        }
+    }
+
     fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float) {
         val currentTime = System.currentTimeMillis()
         val textHeight = 40f
@@ -388,6 +431,7 @@ class Renderer @Inject constructor(
         if (!starBitmap.isRecycled) starBitmap.recycle()
         if (!asteroidBitmap.isRecycled) asteroidBitmap.recycle()
         if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle()
+        if (!enemyShipBitmap.isRecycled) enemyShipBitmap.recycle()
         particleSystem.onDestroy()
     }
 }
