@@ -61,6 +61,16 @@
             android:text="LEADERBOARD"
             android:backgroundTint="@android:color/holo_blue_light"
             android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/shopButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="GALACTIC SHOP"
+            android:backgroundTint="@android:color/holo_purple"
+            android:textColor="@android:color/white" />
+
     </LinearLayout>
 
     <LinearLayout
@@ -69,73 +79,90 @@
         android:layout_height="wrap_content"
         android:layout_above="@id/buttonLayout"
         android:background="@android:color/darker_gray"
-        android:orientation="horizontal"
-        android:padding="10dp">
+        android:orientation="vertical"
+        android:padding="10dp"
+        android:minHeight="150dp">
+
+        <Spinner
+            android:id="@+id/shipSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp" />
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:gravity="center">
 
-            <ImageButton
-                android:id="@+id/cockpitImage"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:background="@null"
-                android:contentDescription="Cockpit"
-                android:src="@drawable/cockpit" />
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
+                <ImageButton
+                    android:id="@+id/cockpitImage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@null"
+                    android:contentDescription="Cockpit"
+                    android:src="@drawable/cockpit"
+                    android:visibility="visible" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Cockpit"
+                    android:textColor="@android:color/white" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="Cockpit"
-                android:textColor="@android:color/white" />
-        </LinearLayout>
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
 
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
+                <ImageButton
+                    android:id="@+id/fuelTankImage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@null"
+                    android:contentDescription="Fuel Tank"
+                    android:src="@drawable/fuel_tank"
+                    android:visibility="visible" />
 
-            <ImageButton
-                android:id="@+id/fuelTankImage"
-                android:layout_width="wrap_content"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Fuel Tank"
+                    android:textColor="@android:color/white" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:background="@null"
-                android:contentDescription="Fuel Tank"
-                android:src="@drawable/fuel_tank" />
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Fuel Tank"
-                android:textColor="@android:color/white" />
-        </LinearLayout>
+                <ImageButton
+                    android:id="@+id/engineImage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@null"
+                    android:contentDescription="Engine"
+                    android:src="@drawable/engine"
+                    android:visibility="visible" />
 
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:orientation="vertical">
-
-            <ImageButton
-                android:id="@+id/engineImage"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@null"
-                android:contentDescription="Engine"
-                android:src="@drawable/engine" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Engine"
-                android:textColor="@android:color/white" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Engine"
+                    android:textColor="@android:color/white" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </RelativeLayout>

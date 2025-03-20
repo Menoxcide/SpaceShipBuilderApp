@@ -13,6 +13,7 @@ import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
 import androidx.core.graphics.withSave
@@ -50,11 +51,53 @@ class Renderer @Inject constructor(
     private val enemyShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
         ?: throw IllegalStateException("Enemy ship bitmap not found")
 
+    // Ship sets (each set has cockpit, fuel tank, and engine)
+    private val shipSets: List<ShipSet> = listOf(
+        ShipSet(
+            cockpit = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
+                ?: throw IllegalStateException("Cockpit bitmap not found"),
+            fuelTank = BitmapFactory.decodeResource(context.resources, R.drawable.fuel_tank)
+                ?: throw IllegalStateException("Fuel tank bitmap not found"),
+            engine = BitmapFactory.decodeResource(context.resources, R.drawable.engine)
+                ?: throw IllegalStateException("Engine bitmap not found")
+        ),
+        ShipSet(
+            cockpit = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit_1)
+                ?: throw IllegalStateException("Cockpit_1 bitmap not found"),
+            fuelTank = BitmapFactory.decodeResource(context.resources, R.drawable.fuel_tank_1)
+                ?: throw IllegalStateException("Fuel_tank_1 bitmap not found"),
+            engine = BitmapFactory.decodeResource(context.resources, R.drawable.engine_1)
+                ?: throw IllegalStateException("Engine_1 bitmap not found")
+        ),
+        ShipSet(
+            cockpit = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit_2)
+                ?: throw IllegalStateException("Cockpit_2 bitmap not found"),
+            fuelTank = BitmapFactory.decodeResource(context.resources, R.drawable.fuel_tank_2)
+                ?: throw IllegalStateException("Fuel_tank_2 bitmap not found"),
+            engine = BitmapFactory.decodeResource(context.resources, R.drawable.engine_2)
+                ?: throw IllegalStateException("Engine_2 bitmap not found")
+        )
+    )
+
+    // Current ship set bitmaps (updated based on selected ship set)
+    private var selectedShipSet: Int = 0 // Default to the first ship set
+
+    val cockpitBitmap: Bitmap get() = shipSets[selectedShipSet].cockpit
+    val fuelTankBitmap: Bitmap get() = shipSets[selectedShipSet].fuelTank
+    val engineBitmap: Bitmap get() = shipSets[selectedShipSet].engine
+
+    val cockpitPlaceholderBitmap: Bitmap get() = createPlaceholderBitmap(cockpitBitmap)
+    val fuelTankPlaceholderBitmap: Bitmap get() = createPlaceholderBitmap(fuelTankBitmap)
+    val enginePlaceholderBitmap: Bitmap get() = createPlaceholderBitmap(engineBitmap)
+
+    data class ShipSet(val cockpit: Bitmap, val fuelTank: Bitmap, val engine: Bitmap)
+
     data class Star(
         var x: Float,
         var y: Float,
         val size: Float,
-        val brightness: Float
+        val brightness: Float,
+        var phase: Float // For random left-right oscillation
     )
 
     private val backgroundPaint = Paint().apply {
@@ -74,6 +117,7 @@ class Renderer @Inject constructor(
         style = Paint.Style.FILL_AND_STROKE
         strokeWidth = 3f
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val powerUpPaint = Paint().apply {
         isAntiAlias = true
@@ -86,40 +130,42 @@ class Renderer @Inject constructor(
         isAntiAlias = true
         color = Color.GREEN
         style = Paint.Style.FILL
-        setShadowLayer(2f, 1f, 1f, Color.BLACK) // Subtle shadow for depth
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
     private val fuelBarPaint = Paint().apply {
         isAntiAlias = true
         color = Color.BLUE
         style = Paint.Style.FILL
-        setShadowLayer(2f, 1f, 1f, Color.BLACK) // Subtle shadow for depth
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
     private val barBorderPaint = Paint().apply {
         isAntiAlias = true
-        color = Color.argb(200, 255, 255, 255) // Slightly transparent white
+        color = Color.argb(200, 255, 255, 255)
         style = Paint.Style.STROKE
         strokeWidth = 2f
-        setShadowLayer(2f, 1f, 1f, Color.BLACK) // Subtle shadow for depth
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
     private val distancePaint = Paint().apply {
         isAntiAlias = true
         textSize = 40f
         color = Color.YELLOW
-        textAlign = Paint.Align.CENTER
+        textAlign = Paint.Align.LEFT
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
         style = Paint.Style.FILL_AND_STROKE
         strokeWidth = 2f
         strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val scorePaint = Paint().apply {
         isAntiAlias = true
         textSize = 40f
         color = Color.CYAN
-        textAlign = Paint.Align.CENTER
+        textAlign = Paint.Align.LEFT
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
         style = Paint.Style.FILL_AND_STROKE
         strokeWidth = 2f
         strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val levelUpPaint = Paint().apply {
         isAntiAlias = true
@@ -130,6 +176,51 @@ class Renderer @Inject constructor(
         style = Paint.Style.FILL_AND_STROKE
         strokeWidth = 4f
         strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    private val longestDistancePaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 100f
+        color = Color.YELLOW
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(6f, 3f, 3f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 4f
+        strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    private val highestScorePaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 100f
+        color = Color.CYAN
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(6f, 3f, 3f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 4f
+        strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    private val highestLevelPaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 100f
+        color = Color.GREEN
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(6f, 3f, 3f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 4f
+        strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    private val starsCollectedPaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 100f
+        color = Color.MAGENTA
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(6f, 3f, 3f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 4f
+        strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val shipTintPaint = Paint().apply {
         isAntiAlias = true
@@ -138,23 +229,23 @@ class Renderer @Inject constructor(
         isAntiAlias = true
         color = Color.WHITE
     }
+    private val enemyProjectilePaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.RED
+    }
     private val scoreTextPaint = Paint().apply {
         isAntiAlias = true
         textSize = 30f
         color = Color.GREEN
         textAlign = Paint.Align.CENTER
     }
-
-    val cockpitBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
-        ?: throw IllegalStateException("Cockpit bitmap not found")
-    val fuelTankBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.fuel_tank)
-        ?: throw IllegalStateException("Fuel tank bitmap not found")
-    val engineBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.engine)
-        ?: throw IllegalStateException("Engine bitmap not found")
-
-    val cockpitPlaceholderBitmap = createPlaceholderBitmap(cockpitBitmap)
-    val fuelTankPlaceholderBitmap = createPlaceholderBitmap(fuelTankBitmap)
-    val enginePlaceholderBitmap = createPlaceholderBitmap(engineBitmap)
+    private val glowPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.RED
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        setShadowLayer(8f, 0f, 0f, Color.RED)
+    }
 
     private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
         return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
@@ -164,6 +255,11 @@ class Renderer @Inject constructor(
                 drawBitmap(original, 0f, 0f, hologramPaint)
             }
         }
+    }
+
+    fun setShipSet(shipSet: Int) {
+        selectedShipSet = shipSet
+        Timber.d("Renderer ship set updated to: $selectedShipSet")
     }
 
     fun updateAnimationFrame() {
@@ -193,17 +289,23 @@ class Renderer @Inject constructor(
                         x = Random.nextFloat() * screenWidth,
                         y = Random.nextFloat() * screenHeight,
                         size = Random.nextFloat() * 2f + 1f,
-                        brightness = Random.nextFloat()
+                        brightness = Random.nextFloat(),
+                        phase = Random.nextFloat() * 2 * Math.PI.toFloat() // Random phase for oscillation
                     )
                 )
             }
         }
         stars.forEach { star ->
-            star.y += 3f
+            star.y += 1f // Move stars downward slowly
+            // Add slow left-right oscillation using sine wave with random phase
+            star.x += sin((System.currentTimeMillis() / 1000f + star.phase).toDouble()).toFloat() * 0.5f
             if (star.y > screenHeight) {
                 star.y = 0f
                 star.x = Random.nextFloat() * screenWidth
+                star.phase = Random.nextFloat() * 2 * Math.PI.toFloat() // Reset phase for variety
             }
+            if (star.x < 0f) star.x = screenWidth
+            if (star.x > screenWidth) star.x = 0f
             val brightness = (sin(animationFrame * 0.05f + star.brightness * Math.PI.toFloat()) * 0.5f + 0.5f).coerceIn(0f, 1f)
             starPaint.alpha = (brightness * 255).toInt()
             canvas.drawCircle(star.x, star.y, star.size, starPaint)
@@ -248,6 +350,8 @@ class Renderer @Inject constructor(
         mergedShipBitmap: Bitmap?,
         placeholders: List<GameEngine.Part>
     ) {
+        selectedShipSet = gameEngine.selectedShipSet // Update the selected ship set
+
         when (gameEngine.shipColor) {
             "red" -> shipTintPaint.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(1.5f, 0.5f, 0.5f, 1f) })
             "blue" -> shipTintPaint.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(0.5f, 0.5f, 1.5f, 1f) })
@@ -258,7 +362,22 @@ class Renderer @Inject constructor(
         if (gameState == GameState.FLIGHT && mergedShipBitmap != null) {
             val x = shipX - mergedShipBitmap.width / 2f
             val y = shipY - mergedShipBitmap.height / 2f
+
+            // Draw the ship
             canvas.drawBitmap(mergedShipBitmap, x, y, shipTintPaint)
+
+            // Draw pulsating red outline if glow is active
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - gameEngine.glowStartTime <= gameEngine.glowDuration) {
+                val elapsed = (currentTime - gameEngine.glowStartTime).toFloat() / gameEngine.glowDuration
+                val pulse = (sin(elapsed * 2 * Math.PI.toFloat() * 3) + 1) / 2 // Pulsate 3 times
+                glowPaint.alpha = (pulse * 255).toInt()
+                val glowRect = RectF(
+                    x - 2f, y - 2f,
+                    x + mergedShipBitmap.width + 2f, y + mergedShipBitmap.height + 2f
+                )
+                canvas.drawRect(glowRect, glowPaint)
+            }
 
             val centerX = shipX
             val centerY = shipY
@@ -286,10 +405,10 @@ class Renderer @Inject constructor(
             particleSystem.drawScoreTextParticles(canvas)
 
             // Draw sleek HP and Fuel bars
-            val barWidth = 8f // Thinner bars for a sleeker look
-            val offset = 2f // Closer to the ship
-            val fuelTankHeight = fuelTankBitmap.height.toFloat() // Match fuel tank height
-            val fuelTankTop = y + cockpitBitmap.height // Fuel tank starts after cockpit
+            val barWidth = 8f
+            val offset = 2f
+            val fuelTankHeight = fuelTankBitmap.height.toFloat()
+            val fuelTankTop = y + cockpitBitmap.height
             val fuelTankBottom = fuelTankTop + fuelTankHeight
             val hpBarX = x - barWidth - offset
             val fuelBarX = x + mergedShipBitmap.width + offset
@@ -388,26 +507,54 @@ class Renderer @Inject constructor(
     fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<GameEngine.Projectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyProjectiles.size} enemy projectiles")
         enemyProjectiles.forEach { projectile ->
-            canvas.drawCircle(projectile.x, projectile.y, GameEngine.PROJECTILE_SIZE, projectilePaint)
+            canvas.drawCircle(projectile.x, projectile.y, GameEngine.PROJECTILE_SIZE, enemyProjectilePaint)
             if (BuildConfig.DEBUG) Timber.d("Drawing enemy projectile at (x=${projectile.x}, y=${projectile.y})")
         }
     }
 
     fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float) {
         val currentTime = System.currentTimeMillis()
-        val textHeight = 40f
-        val startY = statusBarHeight + 50f
+        val textHeight = 100f // Height of each text line, matching levelUpPaint
+        val startY = statusBarHeight + 150f // Move down further to avoid notification bar
+
         if (gameEngine.gameState == GameState.FLIGHT) {
-            canvas.drawText("Distance: ${gameEngine.distanceTraveled.toInt()} units", screenWidth / 2f, startY, distancePaint)
-            canvas.drawText("Score: ${gameEngine.currentScore}", screenWidth / 2f, startY + textHeight, scorePaint)
-            canvas.drawText("Level: ${gameEngine.level}", screenWidth / 2f, startY + 2 * textHeight, graffitiPaint)
+            // Calculate text bounds for better centering
+            val distanceText = "Distance: ${gameEngine.distanceTraveled.toInt()} units"
+            val scoreText = "Score: ${gameEngine.currentScore}"
+            val levelText = "Level: ${gameEngine.level}"
+
+            val distanceBounds = Rect()
+            val scoreBounds = Rect()
+            val levelBounds = Rect()
+
+            distancePaint.getTextBounds(distanceText, 0, distanceText.length, distanceBounds)
+            scorePaint.getTextBounds(scoreText, 0, scoreText.length, scoreBounds)
+            graffitiPaint.getTextBounds(levelText, 0, levelText.length, levelBounds)
+
+            val totalWidth = maxOf(distanceBounds.width(), scoreBounds.width(), levelBounds.width())
+            val startX = (screenWidth - totalWidth) / 2f
+
+            canvas.drawText(distanceText, startX, startY, distancePaint)
+            canvas.drawText(scoreText, startX, startY + textHeight, scorePaint)
+            canvas.drawText(levelText, startX, startY + 2 * textHeight, graffitiPaint)
 
             if (gameEngine.levelUpAnimationStartTime > 0L && currentTime - gameEngine.levelUpAnimationStartTime <= GameEngine.LEVEL_UP_ANIMATION_DURATION) {
-                val levelText = "Level ${gameEngine.level}"
-                canvas.drawText(levelText, screenWidth / 2f, screenHeight / 2f, levelUpPaint)
+                val levelTextDisplay = "Level ${gameEngine.level}"
+                canvas.drawText(levelTextDisplay, screenWidth / 2f, screenHeight / 2f, levelUpPaint)
             } else {
                 gameEngine.levelUpAnimationStartTime = 0L
             }
+        } else if (gameEngine.gameState == GameState.BUILD) {
+            // Display longestDistanceTraveled, highestScore, highestLevel, and starsCollected in build mode
+            val longestDistanceText = "Longest Distance: ${gameEngine.longestDistanceTraveled.toInt()}"
+            val highestScoreText = "Highest Score: ${gameEngine.highestScore}"
+            val highestLevelText = "Highest Level: ${gameEngine.highestLevel}"
+            val starsCollectedText = "Stars Collected: ${gameEngine.starsCollected}"
+
+            canvas.drawText(longestDistanceText, screenWidth / 2f, startY, longestDistancePaint)
+            canvas.drawText(highestScoreText, screenWidth / 2f, startY + textHeight, highestScorePaint)
+            canvas.drawText(highestLevelText, screenWidth / 2f, startY + 2 * textHeight, highestLevelPaint)
+            canvas.drawText(starsCollectedText, screenWidth / 2f, startY + 3 * textHeight, starsCollectedPaint)
         }
     }
 

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="@android:color/white"
+    android:gravity="center">
+
+    <TextView
+        android:id="@+id/continueMessage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Game Over! Watch an ad to continue?"
+        android:textSize="18sp"
+        android:textColor="@android:color/black"
+        android:paddingBottom="16dp"/>
+
+    <Button
+        android:id="@+id/watchAdButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Watch Ad"
+        android:layout_marginBottom="8dp"/>
+
+    <Button
+        android:id="@+id/returnButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Return to Build"/>
+
+</LinearLayout>

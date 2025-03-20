@@ -24,3 +24,10 @@
 -keep class androidx.credentials.playservices.** {
   *;
 }
+# Hilt rules
+-keep class dagger.hilt.** { *; }
+-keep class **$$HiltComponents { *; }
+-keep class **_Hilt { *; }
+-keepclasseswithmembers class * {
+    @dagger.hilt.** <methods>;
+}

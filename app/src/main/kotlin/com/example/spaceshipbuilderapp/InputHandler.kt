@@ -73,12 +73,12 @@ class InputHandler @Inject constructor(
         }
     }
 
-    private fun getTargetPosition(partType: String): Pair<Float, Float>? {
+    fun getTargetPosition(partType: String): Pair<Float, Float>? {
         return gameEngine.placeholders.find { it.type == partType }?.let { Pair(it.x, it.y) }
             .also { if (BuildConfig.DEBUG && it == null) Timber.d("No placeholder found for $partType") }
     }
 
-    private fun checkOverlap(x: Float, y: Float, part: Part): Boolean {
+    fun checkOverlap(x: Float, y: Float, part: Part): Boolean {
         val overlap = gameEngine.parts.any { existingPart ->
             existingPart != part && hypot(existingPart.x - x, existingPart.y - y) < OVERLAP_THRESHOLD
         }

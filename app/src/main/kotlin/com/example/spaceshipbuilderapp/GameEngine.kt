@@ -16,7 +16,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 import kotlinx.coroutines.tasks.await
 
-enum class GameState { BUILD, FLIGHT }
+enum class GameState { BUILD, FLIGHT, GAME_OVER }
 
 class GameEngine @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -30,12 +30,12 @@ class GameEngine @Inject constructor(
             field = value
             if (value == GameState.FLIGHT) {
                 onLaunchListener?.invoke(true)
-                distanceTraveled = 0f
+                sessionDistanceTraveled = 0f // Reset session distance for the new flight
                 levelUpAnimationStartTime = 0L
                 shipX = screenWidth / 2f
                 shipY = screenHeight / 2f
                 applyShipColorEffects()
-            } else {
+            } else if (value == GameState.BUILD) {
                 mergedShipBitmap?.recycle()
                 mergedShipBitmap = null
                 shipX = screenWidth / 2f
@@ -51,11 +51,29 @@ class GameEngine @Inject constructor(
                 parts.clear()
                 onLaunchListener?.invoke(false)
                 resetPowerUpEffects()
-                level = 1
+                // Update longestDistanceTraveled, highestScore, and highestLevel before resetting
+                if (distanceTraveled > longestDistanceTraveled) {
+                    longestDistanceTraveled = distanceTraveled
+                }
+                if (currentScore > highestScore) {
+                    highestScore = currentScore
+                }
+                if (level > highestLevel) {
+                    highestLevel = level
+                }
+                // Reset distanceTraveled, currentScore, and level
+                distanceTraveled = 0f
                 currentScore = 0
+                level = 1
                 projectiles.clear()
                 enemyShips.clear()
                 enemyProjectiles.clear()
+                glowStartTime = 0L
+                continuesUsed = 0
+                // Save persistent data when returning to build mode
+                if (userId != null) {
+                    savePersistentData(userId!!)
+                }
             }
         }
 
@@ -67,10 +85,42 @@ class GameEngine @Inject constructor(
     var hp = 100f
     var maxHp = 100f
     var level = 1
+        set(value) {
+            if (field != value) {
+                field = value
+                updateUnlockedShipSets()
+                if (userId != null) {
+                    savePersistentData(userId!!)
+                }
+            }
+        }
     var playerName: String = "Player"
     private var onLaunchListener: ((Boolean) -> Unit)? = null
     var onPowerUpCollectedListener: ((Float, Float) -> Unit)? = null
+    var onGameOverListener: ((Boolean, () -> Unit, () -> Unit) -> Unit)? = null
     var currentScore = 0
+    var highestScore = 0 // Highest score achieved, loaded from/saved to Firebase
+        set(value) {
+            field = value
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
+    var highestLevel = 1 // Highest level achieved, loaded from/saved to Firebase
+        set(value) {
+            field = value
+            updateUnlockedShipSets()
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
+    var starsCollected = 0 // Number of star power-ups collected, loaded from/saved to Firebase
+        set(value) {
+            field = value
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
 
     var shipColor: String = "default"
         set(value) {
@@ -81,6 +131,21 @@ class GameEngine @Inject constructor(
                 savePersistentData(userId!!)
             }
         }
+
+    // Ship set selection
+    var selectedShipSet: Int = 0 // 0 = default, 1 = ship set 1, 2 = ship set 2
+        set(value) {
+            if (value in unlockedShipSets) {
+                field = value
+                if (userId != null) {
+                    savePersistentData(userId!!)
+                }
+                Timber.d("Selected ship set: $value")
+            } else {
+                Timber.w("Cannot select ship set $value, not unlocked yet")
+            }
+        }
+    private val unlockedShipSets = mutableSetOf(0) // Default ship set is always unlocked
 
     var shipX: Float = 0f
     var shipY: Float = 0f
@@ -101,6 +166,14 @@ class GameEngine @Inject constructor(
     private var lastEnemySpawnTime = System.currentTimeMillis()
     private var lastScoreUpdateTime = System.currentTimeMillis()
     private var lastDistanceUpdateTime = System.currentTimeMillis()
+
+    // Glow effect variables
+    var glowStartTime: Long = 0L
+    val glowDuration = 1000L
+
+    // Continue logic
+    private var continuesUsed = 0
+    private val maxContinues = 2
 
     var screenWidth: Float = 0f
     var screenHeight: Float = 0f
@@ -126,7 +199,23 @@ class GameEngine @Inject constructor(
     private var baseSpeed = 5f
     private var currentSpeed = baseSpeed
 
-    var distanceTraveled = 0f
+    var distanceTraveled = 0f // Total distance traveled in the current game, reset after crash
+        set(value) {
+            field = value
+            // Save persistent data whenever distanceTraveled changes significantly
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
+    var longestDistanceTraveled = 0f // Longest distance traveled, loaded from/saved to Firebase
+        set(value) {
+            field = value
+            updateUnlockedShipSets()
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
+    private var sessionDistanceTraveled = 0f // Distance traveled in the current flight session
     private val distancePerLevel = 100f
     var levelUpAnimationStartTime = 0L
     private var userId: String? = null
@@ -153,24 +242,87 @@ class GameEngine @Inject constructor(
             if (doc.exists()) {
                 level = doc.getLong("level")?.toInt() ?: 1
                 shipColor = doc.getString("shipColor") ?: "default"
-                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor")
+                selectedShipSet = doc.getLong("selectedShipSet")?.toInt() ?: 0
+                distanceTraveled = doc.getDouble("distanceTraveled")?.toFloat() ?: 0f
+                longestDistanceTraveled = doc.getDouble("longestDistanceTraveled")?.toFloat() ?: 0f
+                highestScore = doc.getLong("highestScore")?.toInt() ?: 0
+                highestLevel = doc.getLong("highestLevel")?.toInt() ?: 1
+                starsCollected = doc.getLong("starsCollected")?.toInt() ?: 0
+                updateUnlockedShipSets()
+                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected")
             } else {
                 Timber.d("User data not found for $userId, initializing with defaults")
                 val userData = hashMapOf(
                     "level" to 1,
-                    "shipColor" to "default"
+                    "shipColor" to "default",
+                    "selectedShipSet" to 0,
+                    "distanceTraveled" to 0f,
+                    "longestDistanceTraveled" to 0f,
+                    "highestScore" to 0,
+                    "highestLevel" to 1,
+                    "starsCollected" to 0
                 )
                 db.collection("users").document(userId).set(userData).await()
                 level = 1
                 shipColor = "default"
+                selectedShipSet = 0
+                distanceTraveled = 0f
+                longestDistanceTraveled = 0f
+                highestScore = 0
+                highestLevel = 1
+                starsCollected = 0
+                updateUnlockedShipSets()
                 Timber.d("Initialized new user data for $userId")
             }
         } catch (e: Exception) {
             Timber.e(e, "Failed to load user data from Firestore: ${e.message}")
             level = 1
             shipColor = "default"
-            Timber.w("Using default user data due to Firestore error: level=$level, shipColor=$shipColor")
+            selectedShipSet = 0
+            distanceTraveled = 0f
+            longestDistanceTraveled = 0f
+            highestScore = 0
+            highestLevel = 1
+            starsCollected = 0
+            updateUnlockedShipSets()
+            Timber.w("Using default user data due to Firestore error: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected")
         }
+    }
+
+    private fun updateUnlockedShipSets() {
+        unlockedShipSets.clear()
+        unlockedShipSets.add(0) // Default ship set is always unlocked
+        // Ship Set 2: Requires level 20 and 20 stars
+        if (highestLevel >= 20 && starsCollected >= 20) {
+            unlockedShipSets.add(1)
+        }
+        // Ship Set 3: Requires level 40 and 40 stars
+        if (highestLevel >= 40 && starsCollected >= 40) {
+            unlockedShipSets.add(2)
+        }
+        // Ensure selected ship set is still valid
+        if (selectedShipSet !in unlockedShipSets) {
+            selectedShipSet = 0
+        }
+        Timber.d("Updated unlocked ship sets: $unlockedShipSets")
+    }
+
+    // Add the unlockShipSet method to fix the compilation error
+    fun unlockShipSet(set: Int) {
+        if (set in 1..2) {
+            unlockedShipSets.add(set)
+            Timber.d("Manually unlocked ship set $set")
+            updateUnlockedShipSets()
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        } else {
+            Timber.w("Invalid ship set $set to unlock")
+        }
+    }
+
+    fun getUnlockedShipSets(): Set<Int> {
+        return unlockedShipSets.toSet()
     }
 
     fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float = this.statusBarHeight) {
@@ -244,14 +396,17 @@ class GameEngine @Inject constructor(
         shipY = shipY.coerceIn(totalShipHeight / 2, this.screenHeight - totalShipHeight / 2)
 
         if (currentTime - lastDistanceUpdateTime >= 1000) {
-            distanceTraveled += currentSpeed
+            sessionDistanceTraveled += currentSpeed
+            distanceTraveled += currentSpeed // Update total distance for the current game
             lastDistanceUpdateTime = currentTime
-            Timber.d("Distance traveled: $distanceTraveled")
+            Timber.d("Session distance traveled: $sessionDistanceTraveled, Total distance traveled: $distanceTraveled")
 
-            if (distanceTraveled >= distancePerLevel * level) {
+            // Use total distanceTraveled for level calculation
+            val totalDistanceForLevel = distanceTraveled
+            if (totalDistanceForLevel >= distancePerLevel * level) {
                 level++
                 levelUpAnimationStartTime = currentTime
-                Timber.d("Level advanced to $level based on distance traveled")
+                Timber.d("Level advanced to $level based on total distance traveled: $totalDistanceForLevel")
             }
         }
 
@@ -396,8 +551,9 @@ class GameEngine @Inject constructor(
                     }
                     "star" -> {
                         currentScore += 50
+                        starsCollected += 1 // Increment starsCollected when a star power-up is collected
                         renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
-                        Timber.d("Added power-up text for Star +50 at (x=${powerUp.x}, y=${powerUp.y})")
+                        Timber.d("Added power-up text for Star +50 at (x=${powerUp.x}, y=${powerUp.y}), starsCollected=$starsCollected")
                     }
                     "invincibility" -> {
                         invincibilityActive = true
@@ -426,7 +582,8 @@ class GameEngine @Inject constructor(
                 renderer.particleSystem.addCollisionParticles(shipX, shipY)
                 renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10)
                 playCollisionSound()
-                Timber.d("Hit asteroid, HP decreased to $hp")
+                glowStartTime = currentTime
+                Timber.d("Hit asteroid, HP decreased to $hp, glow triggered")
             }
             if (asteroid is GiantAsteroid) {
                 if (Random.nextFloat() < EXPLOSION_CHANCE) {
@@ -449,7 +606,8 @@ class GameEngine @Inject constructor(
                 renderer.particleSystem.addCollisionParticles(shipX, shipY)
                 renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10)
                 playCollisionSound()
-                Timber.d("Hit by enemy projectile, HP decreased to $hp")
+                glowStartTime = currentTime
+                Timber.d("Hit by enemy projectile, HP decreased to $hp, glow triggered")
             }
         }
 
@@ -467,7 +625,8 @@ class GameEngine @Inject constructor(
                 renderer.particleSystem.addCollisionParticles(shipX, shipY)
                 renderer.particleSystem.addDamageTextParticle(shipX, shipY, 25)
                 playCollisionSound()
-                Timber.d("Collided with enemy ship, HP decreased to $hp")
+                glowStartTime = currentTime
+                Timber.d("Collided with enemy ship, HP decreased to $hp, glow triggered")
             }
         }
 
@@ -487,15 +646,66 @@ class GameEngine @Inject constructor(
 
         if (fuel <= 0 || hp <= 0) {
             highscoreManager.addScore(userId, playerName, currentScore, level, distanceTraveled)
-            gameState = GameState.BUILD
-            powerUps.clear()
-            asteroids.clear()
-            projectiles.clear()
-            enemyShips.clear()
-            enemyProjectiles.clear()
-            resetPowerUpEffects()
-            hp = maxHp
-            fuel = 0f
+            if (continuesUsed < maxContinues) {
+                gameState = GameState.GAME_OVER
+                onGameOverListener?.invoke(true, {
+                    continuesUsed++
+                    hp = maxHp
+                    fuel = fuelCapacity
+                    gameState = GameState.FLIGHT
+                    Timber.d("Player continued after ad, continues used: $continuesUsed")
+                }, {
+                    gameState = GameState.BUILD
+                    powerUps.clear()
+                    asteroids.clear()
+                    projectiles.clear()
+                    enemyShips.clear()
+                    enemyProjectiles.clear()
+                    resetPowerUpEffects()
+                    // Update longestDistanceTraveled, highestScore, and highestLevel before resetting
+                    if (distanceTraveled > longestDistanceTraveled) {
+                        longestDistanceTraveled = distanceTraveled
+                    }
+                    if (currentScore > highestScore) {
+                        highestScore = currentScore
+                    }
+                    if (level > highestLevel) {
+                        highestLevel = level
+                    }
+                    // Reset distanceTraveled, currentScore, and level
+                    distanceTraveled = 0f
+                    currentScore = 0
+                    level = 1
+                    hp = maxHp
+                    fuel = 0f
+                    Timber.d("Player declined continue, returning to build screen")
+                })
+            } else {
+                gameState = GameState.BUILD
+                powerUps.clear()
+                asteroids.clear()
+                projectiles.clear()
+                enemyShips.clear()
+                enemyProjectiles.clear()
+                resetPowerUpEffects()
+                // Update longestDistanceTraveled, highestScore, and highestLevel before resetting
+                if (distanceTraveled > longestDistanceTraveled) {
+                    longestDistanceTraveled = distanceTraveled
+                }
+                if (currentScore > highestScore) {
+                    highestScore = currentScore
+                }
+                if (level > highestLevel) {
+                    highestLevel = level
+                }
+                // Reset distanceTraveled, currentScore, and level
+                distanceTraveled = 0f
+                currentScore = 0
+                level = 1
+                hp = maxHp
+                fuel = 0f
+                Timber.d("No more continues available, returning to build screen")
+            }
         }
     }
 
@@ -638,11 +848,17 @@ class GameEngine @Inject constructor(
     private fun savePersistentData(userId: String) {
         val userData = hashMapOf(
             "level" to level,
-            "shipColor" to shipColor
+            "shipColor" to shipColor,
+            "selectedShipSet" to selectedShipSet,
+            "distanceTraveled" to distanceTraveled,
+            "longestDistanceTraveled" to longestDistanceTraveled,
+            "highestScore" to highestScore,
+            "highestLevel" to highestLevel,
+            "starsCollected" to starsCollected
         )
         db.collection("users").document(userId).set(userData)
             .addOnSuccessListener {
-                Timber.d("Saved user data for $userId: level=$level, shipColor=$shipColor")
+                Timber.d("Saved user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected")
             }
             .addOnFailureListener { e ->
                 Timber.e(e, "Failed to save user data for $userId")
@@ -651,6 +867,10 @@ class GameEngine @Inject constructor(
 
     fun setLaunchListener(listener: (Boolean) -> Unit) {
         onLaunchListener = listener
+    }
+
+    fun setGameOverListener(listener: (Boolean, () -> Unit, () -> Unit) -> Unit) {
+        onGameOverListener = listener
     }
 
     fun notifyLaunchListener() {
@@ -680,8 +900,8 @@ class GameEngine @Inject constructor(
     private fun spawnEnemyShip(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        val speedY = (2f + level * 0.5f) * 1.5f // Increased speed by 50%
-        enemyShips.add(EnemyShip(x, y, speedY, shotInterval = 4000L)) // Half the player's interval (1000ms / 2)
+        val speedY = (2f + level * 0.5f) * 1.5f
+        enemyShips.add(EnemyShip(x, y, speedY, shotInterval = 500L))
     }
 
     private fun playPowerUpSound() {

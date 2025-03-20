@@ -97,18 +97,19 @@ class FlightView @Inject constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) return false
+        // Use the same ship bounds as in GameEngine.checkCollision
         val shipRect = RectF(
-            gameEngine.shipX - (gameEngine.mergedShipBitmap?.width ?: 0) / 2f,
-            gameEngine.shipY - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f,
-            gameEngine.shipX + (gameEngine.mergedShipBitmap?.width ?: 0) / 2f,
-            gameEngine.shipY + (gameEngine.mergedShipBitmap?.height ?: 0) / 2f
+            gameEngine.shipX - gameEngine.maxPartHalfWidth,
+            gameEngine.shipY - gameEngine.totalShipHeight / 2,
+            gameEngine.shipX + gameEngine.maxPartHalfWidth,
+            gameEngine.shipY + gameEngine.totalShipHeight / 2
         )
 
         return when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 if (shipRect.contains(event.rawX, event.rawY)) {
                     isDragging = true
-                    if (BuildConfig.DEBUG) Timber.d("Started dragging ship")
+                    if (BuildConfig.DEBUG) Timber.d("Started dragging ship from (x=${event.rawX}, y=${event.rawY})")
                     true
                 } else {
                     false
@@ -116,8 +117,14 @@ class FlightView @Inject constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isDragging) {
-                    gameEngine.shipX = event.rawX.coerceIn(0f + (gameEngine.mergedShipBitmap?.width ?: 0) / 2f, screenWidth - (gameEngine.mergedShipBitmap?.width ?: 0) / 2f)
-                    gameEngine.shipY = event.rawY.coerceIn(0f + (gameEngine.mergedShipBitmap?.height ?: 0) / 2f, screenHeight - (gameEngine.mergedShipBitmap?.height ?: 0) / 2f)
+                    gameEngine.shipX = event.rawX.coerceIn(
+                        gameEngine.maxPartHalfWidth,
+                        screenWidth - gameEngine.maxPartHalfWidth
+                    )
+                    gameEngine.shipY = event.rawY.coerceIn(
+                        gameEngine.totalShipHeight / 2,
+                        screenHeight - gameEngine.totalShipHeight / 2
+                    )
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastProjectileSpawnTime >= projectileSpawnInterval) {
                         gameEngine.spawnProjectile()

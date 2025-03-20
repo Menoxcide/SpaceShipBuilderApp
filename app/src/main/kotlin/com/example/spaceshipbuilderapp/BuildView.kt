@@ -63,10 +63,10 @@ class BuildView @Inject constructor(
         if (BuildConfig.DEBUG) Timber.d("BuildView status bar height set to: $height")
     }
 
-    fun setSelectedPart(part: GameEngine.Part) {
+    fun setSelectedPart(part: GameEngine.Part?) {
         gameEngine.selectedPart = part
         invalidate()
-        if (BuildConfig.DEBUG) Timber.d("Selected part set to ${part.type} at (x=${part.x}, y=${part.y})")
+        if (BuildConfig.DEBUG) Timber.d("Selected part set to ${part?.type} at (x=${part?.x}, y=${part?.y})")
     }
 
     fun launchShip(): Boolean {
@@ -88,11 +88,13 @@ class BuildView @Inject constructor(
         super.onDraw(canvas)
         Timber.d("onDraw called, visibility=$isVisible, gameState=${gameState}")
 
+        // Draw background (including stars) first
         renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
         renderer.drawPlaceholders(canvas, gameEngine.placeholders)
         renderer.drawParts(canvas, gameEngine.parts)
         gameEngine.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
         renderer.drawStats(canvas, gameEngine, statusBarHeight)
+        // Draw ship after background to ensure stars are behind
         renderer.drawShip(
             canvas,
             gameEngine,
