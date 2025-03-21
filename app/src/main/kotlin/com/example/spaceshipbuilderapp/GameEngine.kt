@@ -13,6 +13,7 @@ import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.random.Random
 import kotlinx.coroutines.tasks.await
@@ -31,7 +32,7 @@ class GameEngine @Inject constructor(
             field = value
             if (value == GameState.FLIGHT) {
                 onLaunchListener?.invoke(true)
-                sessionDistanceTraveled = 0f // Reset session distance for the new flight
+                sessionDistanceTraveled = 0f
                 levelUpAnimationStartTime = 0L
                 shipX = screenWidth / 2f
                 shipY = screenHeight / 2f
@@ -52,7 +53,6 @@ class GameEngine @Inject constructor(
                 parts.clear()
                 onLaunchListener?.invoke(false)
                 resetPowerUpEffects()
-                // Update persistent stats before resetting
                 if (distanceTraveled > longestDistanceTraveled) {
                     longestDistanceTraveled = distanceTraveled
                 }
@@ -62,7 +62,6 @@ class GameEngine @Inject constructor(
                 if (level > highestLevel) {
                     highestLevel = level
                 }
-                // Reset game stats
                 distanceTraveled = 0f
                 currentScore = 0
                 level = 1
@@ -231,7 +230,6 @@ class GameEngine @Inject constructor(
         const val PROJECTILE_SPEED = 10f
         const val PROJECTILE_SIZE = 5f
         const val ASTEROID_DESTROY_POINTS = 20
-        const val BOSS_LEVEL = 10
         const val BOSS_SHOT_INTERVAL = 2000L
         const val BOSS_MOVEMENT_INTERVAL = 1000L
     }
@@ -393,19 +391,32 @@ class GameEngine @Inject constructor(
         shipX = shipX.coerceIn(maxPartHalfWidth, this.screenWidth - maxPartHalfWidth)
         shipY = shipY.coerceIn(totalShipHeight / 2, this.screenHeight - totalShipHeight / 2)
 
-        if (level >= BOSS_LEVEL && boss == null && !bossDefeated) {
+        // Reset bossDefeated when not on a boss level
+        if (level % 10 != 0) {
+            bossDefeated = false
+        }
+
+        // Spawn boss at levels 10, 20, 30, etc.
+        if (level % 10 == 0 && level >= 10 && boss == null && !bossDefeated) {
+            val tier = level / 10 // e.g., level 10 -> tier 1, level 20 -> tier 2
+            val hpMultiplier = Math.pow(1.1, (tier - 1).toDouble()).toFloat()
+            val intervalMultiplier = Math.pow(0.9, (tier - 1).toDouble()).toFloat()
+            val bossHp = maxHp * hpMultiplier
             boss = BossShip(
                 x = screenWidth / 2f,
                 y = screenHeight * 0.1f,
-                hp = maxHp,
-                shotInterval = BOSS_SHOT_INTERVAL,
-                movementInterval = BOSS_MOVEMENT_INTERVAL
+                hp = bossHp,
+                maxHp = bossHp,
+                shotInterval = (BOSS_SHOT_INTERVAL * intervalMultiplier).toLong(),
+                movementInterval = (BOSS_MOVEMENT_INTERVAL * intervalMultiplier).toLong(),
+                tier = tier
             )
-            Timber.d("Boss spawned at level $level with HP=$maxHp")
+            Timber.d("Boss spawned at level $level (tier $tier) with HP=$bossHp, shotInterval=${boss!!.shotInterval}, movementInterval=${boss!!.movementInterval}")
         }
 
+        boss?.update(this, currentTime)
+
         if (boss != null) {
-            boss?.update(this, currentTime)
             val projectilesToRemove = mutableListOf<Projectile>()
             for (projectile in projectiles) {
                 if (boss == null) break // Exit loop if boss is defeated
@@ -415,47 +426,48 @@ class GameEngine @Inject constructor(
                     projectile.x + PROJECTILE_SIZE,
                     projectile.y + PROJECTILE_SIZE
                 )
-                val bossRect = RectF(
-                    boss!!.x - 75f,
-                    boss!!.y - 75f,
-                    boss!!.x + 75f,
-                    boss!!.y + 75f
-                )
-                if (projectileRect.intersect(bossRect)) {
-                    boss!!.hp -= 10f
-                    projectilesToRemove.add(projectile)
-                    renderer.particleSystem.addExplosionParticles(projectile.x, projectile.y)
-                    Timber.d("Boss hit, HP decreased to ${boss!!.hp}")
-                    if (boss!!.hp <= 0) {
-                        currentScore += 500
-                        renderer.particleSystem.addExplosionParticles(boss!!.x, boss!!.y)
-                        renderer.particleSystem.addScoreTextParticle(boss!!.x, boss!!.y, "+500")
-                        Timber.d("Boss defeated! Score increased by 500 to $currentScore")
-                        level++ // Advance to next level
-                        levelUpAnimationStartTime = currentTime
-                        if (level > highestLevel) {
-                            highestLevel = level
-                            val previousUnlocked = unlockedShipSets.toList()
-                            updateUnlockedShipSets()
-                            val newUnlocked = unlockedShipSets.filter { it !in previousUnlocked }
-                            if (newUnlocked.isNotEmpty()) {
-                                renderer.showUnlockMessage(newUnlocked)
+                boss?.let { b ->
+                    val bossRect = RectF(
+                        b.x - 75f,
+                        b.y - 75f,
+                        b.x + 75f,
+                        b.y + 75f
+                    )
+                    if (projectileRect.intersect(bossRect)) {
+                        b.hp -= 10f
+                        projectilesToRemove.add(projectile)
+                        renderer.particleSystem.addExplosionParticles(projectile.x, projectile.y)
+                        Timber.d("Boss hit, HP decreased to ${b.hp}")
+                        if (b.hp <= 0) {
+                            currentScore += 500
+                            renderer.particleSystem.addExplosionParticles(b.x, b.y)
+                            renderer.particleSystem.addScoreTextParticle(b.x, b.y, "+500")
+                            Timber.d("Boss defeated! Score increased by 500 to $currentScore")
+                            level++
+                            levelUpAnimationStartTime = currentTime
+                            if (level > highestLevel) {
+                                highestLevel = level
+                                val previousUnlocked = unlockedShipSets.toList()
+                                updateUnlockedShipSets()
+                                val newUnlocked = unlockedShipSets.filter { it !in previousUnlocked }
+                                if (newUnlocked.isNotEmpty()) {
+                                    renderer.showUnlockMessage(newUnlocked)
+                                }
                             }
+                            boss = null
+                            bossDefeated = true
                         }
-                        boss = null
-                        bossDefeated = true
-                        break // Exit loop to prevent further access
                     }
                 }
             }
             projectiles.removeAll(projectilesToRemove)
 
-            boss?.let { boss ->
+            boss?.let { b ->
                 val bossRect = RectF(
-                    boss.x - 75f,
-                    boss.y - 75f,
-                    boss.x + 75f,
-                    boss.y + 75f
+                    b.x - 75f,
+                    b.y - 75f,
+                    b.x + 75f,
+                    b.y + 75f
                 )
                 if (checkCollision(bossRect) && !stealthActive && !invincibilityActive) {
                     hp -= 50f
@@ -1038,12 +1050,14 @@ class GameEngine @Inject constructor(
         var x: Float,
         var y: Float,
         var hp: Float,
+        val maxHp: Float,
         val shotInterval: Long,
         val movementInterval: Long,
         var speedX: Float = 0f,
         var speedY: Float = 0f,
         var lastShotTime: Long = 0L,
-        var lastMovementChange: Long = 0L
+        var lastMovementChange: Long = 0L,
+        val tier: Int
     ) {
         fun update(gameEngine: GameEngine, currentTime: Long) {
             x += speedX

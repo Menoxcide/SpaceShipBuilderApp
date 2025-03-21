@@ -50,10 +50,17 @@ class Renderer @Inject constructor(
         ?: throw IllegalStateException("Invincibility bitmap not found")
     private val enemyShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
         ?: throw IllegalStateException("Enemy ship bitmap not found")
-    private val bossShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship)
-        ?: throw IllegalStateException("Boss ship bitmap not found")
     private val bossProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_projectile)
         ?: throw IllegalStateException("Boss projectile bitmap not found")
+
+    private val bossShipBitmaps: List<Bitmap> = listOf(
+        BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship_1)
+            ?: throw IllegalStateException("Boss ship 1 bitmap not found"),
+        BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship_2)
+            ?: throw IllegalStateException("Boss ship 2 bitmap not found"),
+        BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship_3)
+            ?: throw IllegalStateException("Boss ship 3 bitmap not found")
+    )
 
     private val shipSets: List<ShipSet> = listOf(
         ShipSet(
@@ -265,7 +272,7 @@ class Renderer @Inject constructor(
     }
     private var unlockMessage: String? = null
     private var unlockMessageStartTime: Long = 0L
-    private val unlockMessageDuration = 5000L // 5 seconds
+    private val unlockMessageDuration = 5000L
 
     private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
         return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
@@ -527,15 +534,17 @@ class Renderer @Inject constructor(
 
     fun drawBoss(canvas: Canvas, boss: GameEngine.BossShip?, statusBarHeight: Float) {
         if (boss == null) return
-        if (BuildConfig.DEBUG) Timber.d("Drawing boss at (x=${boss.x}, y=${boss.y})")
-        val scaledBitmap = Bitmap.createScaledBitmap(bossShipBitmap, 150, 150, true)
+        if (BuildConfig.DEBUG) Timber.d("Drawing boss at (x=${boss.x}, y=${boss.y}) with tier=${boss.tier}")
+        val bitmapIndex = (boss.tier - 1) % bossShipBitmaps.size
+        val bossBitmap = bossShipBitmaps[bitmapIndex]
+        val scaledBitmap = Bitmap.createScaledBitmap(bossBitmap, 150, 150, true)
         canvas.drawBitmap(scaledBitmap, boss.x - 75f, boss.y - 75f, bossPaint)
 
         val barWidth = 150f
         val barHeight = 10f
         val barX = boss.x - barWidth / 2f
         val barY = boss.y - 75f - barHeight - 5f
-        val hpFraction = (boss.hp / 100f).coerceIn(0f, 1f)
+        val hpFraction = (boss.hp / boss.maxHp).coerceIn(0f, 1f)
         val filledWidth = barWidth * hpFraction
 
         val red = (255 * (1 - hpFraction)).toInt()
@@ -633,7 +642,7 @@ class Renderer @Inject constructor(
         if (!asteroidBitmap.isRecycled) asteroidBitmap.recycle()
         if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle()
         if (!enemyShipBitmap.isRecycled) enemyShipBitmap.recycle()
-        if (!bossShipBitmap.isRecycled) bossShipBitmap.recycle()
+        bossShipBitmaps.forEach { if (!it.isRecycled) it.recycle() }
         if (!bossProjectileBitmap.isRecycled) bossProjectileBitmap.recycle()
         particleSystem.onDestroy()
     }
