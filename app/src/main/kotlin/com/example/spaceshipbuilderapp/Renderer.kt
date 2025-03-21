@@ -50,8 +50,11 @@ class Renderer @Inject constructor(
         ?: throw IllegalStateException("Invincibility bitmap not found")
     private val enemyShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
         ?: throw IllegalStateException("Enemy ship bitmap not found")
+    private val bossShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship)
+        ?: throw IllegalStateException("Boss ship bitmap not found")
+    private val bossProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_projectile)
+        ?: throw IllegalStateException("Boss projectile bitmap not found")
 
-    // Ship sets (each set has cockpit, fuel tank, and engine)
     private val shipSets: List<ShipSet> = listOf(
         ShipSet(
             cockpit = BitmapFactory.decodeResource(context.resources, R.drawable.cockpit)
@@ -79,8 +82,7 @@ class Renderer @Inject constructor(
         )
     )
 
-    // Current ship set bitmaps (updated based on selected ship set)
-    private var selectedShipSet: Int = 0 // Default to the first ship set
+    private var selectedShipSet: Int = 0
 
     val cockpitBitmap: Bitmap get() = shipSets[selectedShipSet].cockpit
     val fuelTankBitmap: Bitmap get() = shipSets[selectedShipSet].fuelTank
@@ -97,7 +99,7 @@ class Renderer @Inject constructor(
         var y: Float,
         val size: Float,
         val brightness: Float,
-        var phase: Float // For random left-right oscillation
+        var phase: Float
     )
 
     private val backgroundPaint = Paint().apply {
@@ -231,7 +233,6 @@ class Renderer @Inject constructor(
     }
     private val enemyProjectilePaint = Paint().apply {
         isAntiAlias = true
-        color = Color.RED
     }
     private val scoreTextPaint = Paint().apply {
         isAntiAlias = true
@@ -246,6 +247,25 @@ class Renderer @Inject constructor(
         strokeWidth = 4f
         setShadowLayer(8f, 0f, 0f, Color.RED)
     }
+    private val bossPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.RED
+    }
+    private val bossHpBarPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
+    }
+    private val bossHpBarBorderPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        setShadowLayer(2f, 1f, 1f, Color.BLACK)
+    }
+    private var unlockMessage: String? = null
+    private var unlockMessageStartTime: Long = 0L
+    private val unlockMessageDuration = 5000L // 5 seconds
 
     private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
         return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
@@ -264,6 +284,14 @@ class Renderer @Inject constructor(
 
     fun updateAnimationFrame() {
         animationFrame = (animationFrame + 1) % 360
+    }
+
+    fun showUnlockMessage(unlockedSets: List<Int>) {
+        if (unlockedSets.isNotEmpty()) {
+            unlockMessage = "Unlocked new ship set(s): ${unlockedSets.joinToString(", ")}"
+            unlockMessageStartTime = System.currentTimeMillis()
+            Timber.d("Showing unlock message: $unlockMessage")
+        }
     }
 
     fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, statusBarHeight: Float, level: Int = 1) {
@@ -290,19 +318,18 @@ class Renderer @Inject constructor(
                         y = Random.nextFloat() * screenHeight,
                         size = Random.nextFloat() * 2f + 1f,
                         brightness = Random.nextFloat(),
-                        phase = Random.nextFloat() * 2 * Math.PI.toFloat() // Random phase for oscillation
+                        phase = Random.nextFloat() * 2 * Math.PI.toFloat()
                     )
                 )
             }
         }
         stars.forEach { star ->
-            star.y += 1f // Move stars downward slowly
-            // Add slow left-right oscillation using sine wave with random phase
+            star.y += 2f
             star.x += sin((System.currentTimeMillis() / 1000f + star.phase).toDouble()).toFloat() * 0.5f
             if (star.y > screenHeight) {
                 star.y = 0f
                 star.x = Random.nextFloat() * screenWidth
-                star.phase = Random.nextFloat() * 2 * Math.PI.toFloat() // Reset phase for variety
+                star.phase = Random.nextFloat() * 2 * Math.PI.toFloat()
             }
             if (star.x < 0f) star.x = screenWidth
             if (star.x > screenWidth) star.x = 0f
@@ -350,7 +377,7 @@ class Renderer @Inject constructor(
         mergedShipBitmap: Bitmap?,
         placeholders: List<GameEngine.Part>
     ) {
-        selectedShipSet = gameEngine.selectedShipSet // Update the selected ship set
+        selectedShipSet = gameEngine.selectedShipSet
 
         when (gameEngine.shipColor) {
             "red" -> shipTintPaint.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setScale(1.5f, 0.5f, 0.5f, 1f) })
@@ -363,14 +390,12 @@ class Renderer @Inject constructor(
             val x = shipX - mergedShipBitmap.width / 2f
             val y = shipY - mergedShipBitmap.height / 2f
 
-            // Draw the ship
             canvas.drawBitmap(mergedShipBitmap, x, y, shipTintPaint)
 
-            // Draw pulsating red outline if glow is active
             val currentTime = System.currentTimeMillis()
             if (currentTime - gameEngine.glowStartTime <= gameEngine.glowDuration) {
                 val elapsed = (currentTime - gameEngine.glowStartTime).toFloat() / gameEngine.glowDuration
-                val pulse = (sin(elapsed * 2 * Math.PI.toFloat() * 3) + 1) / 2 // Pulsate 3 times
+                val pulse = (sin(elapsed * 2 * Math.PI.toFloat() * 3) + 1) / 2
                 glowPaint.alpha = (pulse * 255).toInt()
                 val glowRect = RectF(
                     x - 2f, y - 2f,
@@ -404,7 +429,6 @@ class Renderer @Inject constructor(
             particleSystem.drawExplosionParticles(canvas)
             particleSystem.drawScoreTextParticles(canvas)
 
-            // Draw sleek HP and Fuel bars
             val barWidth = 8f
             val offset = 2f
             val fuelTankHeight = fuelTankBitmap.height.toFloat()
@@ -417,11 +441,8 @@ class Renderer @Inject constructor(
             val hpFilledHeight = fuelTankHeight * hpFraction
             val fuelFilledHeight = fuelTankHeight * fuelFraction
 
-            // Draw borders
             canvas.drawRect(hpBarX, fuelTankTop, hpBarX + barWidth, fuelTankBottom, barBorderPaint)
             canvas.drawRect(fuelBarX, fuelTankTop, fuelBarX + barWidth, fuelTankBottom, barBorderPaint)
-
-            // Draw filled parts (from bottom up)
             canvas.drawRect(hpBarX, fuelTankBottom - hpFilledHeight, hpBarX + barWidth, fuelTankBottom, hpBarPaint)
             canvas.drawRect(fuelBarX, fuelTankBottom - fuelFilledHeight, fuelBarX + barWidth, fuelTankBottom, fuelBarPaint)
         } else if (gameState == GameState.BUILD && shipParts.isNotEmpty()) {
@@ -483,7 +504,7 @@ class Renderer @Inject constructor(
                 rotate(asteroid.rotation * (180f / Math.PI.toFloat()))
                 drawBitmap(scaledBitmap, -asteroid.size, -asteroid.size, asteroidPaint)
             }
-            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}, rotation=${asteroid.rotation}")
+            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}")
         }
     }
 
@@ -504,21 +525,42 @@ class Renderer @Inject constructor(
         }
     }
 
+    fun drawBoss(canvas: Canvas, boss: GameEngine.BossShip?, statusBarHeight: Float) {
+        if (boss == null) return
+        if (BuildConfig.DEBUG) Timber.d("Drawing boss at (x=${boss.x}, y=${boss.y})")
+        val scaledBitmap = Bitmap.createScaledBitmap(bossShipBitmap, 150, 150, true)
+        canvas.drawBitmap(scaledBitmap, boss.x - 75f, boss.y - 75f, bossPaint)
+
+        val barWidth = 150f
+        val barHeight = 10f
+        val barX = boss.x - barWidth / 2f
+        val barY = boss.y - 75f - barHeight - 5f
+        val hpFraction = (boss.hp / 100f).coerceIn(0f, 1f)
+        val filledWidth = barWidth * hpFraction
+
+        val red = (255 * (1 - hpFraction)).toInt()
+        val green = (255 * hpFraction).toInt()
+        bossHpBarPaint.color = Color.rgb(red, green, 0)
+
+        canvas.drawRect(barX, barY, barX + filledWidth, barY + barHeight, bossHpBarPaint)
+        canvas.drawRect(barX, barY, barX + barWidth, barY + barHeight, bossHpBarBorderPaint)
+    }
+
     fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<GameEngine.Projectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyProjectiles.size} enemy projectiles")
         enemyProjectiles.forEach { projectile ->
-            canvas.drawCircle(projectile.x, projectile.y, GameEngine.PROJECTILE_SIZE, enemyProjectilePaint)
+            val scaledBitmap = Bitmap.createScaledBitmap(bossProjectileBitmap, 20, 20, true)
+            canvas.drawBitmap(scaledBitmap, projectile.x - scaledBitmap.width / 2f, projectile.y - scaledBitmap.height / 2f, enemyProjectilePaint)
             if (BuildConfig.DEBUG) Timber.d("Drawing enemy projectile at (x=${projectile.x}, y=${projectile.y})")
         }
     }
 
-    fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float) {
+    fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float, gameState: GameState) {
         val currentTime = System.currentTimeMillis()
-        val textHeight = 100f // Height of each text line, matching levelUpPaint
-        val startY = statusBarHeight + 150f // Move down further to avoid notification bar
+        val textHeight = 100f
+        val startY = statusBarHeight + 150f
 
-        if (gameEngine.gameState == GameState.FLIGHT) {
-            // Calculate text bounds for better centering
+        if (gameState == GameState.FLIGHT) {
             val distanceText = "Distance: ${gameEngine.distanceTraveled.toInt()} units"
             val scoreText = "Score: ${gameEngine.currentScore}"
             val levelText = "Level: ${gameEngine.level}"
@@ -544,8 +586,20 @@ class Renderer @Inject constructor(
             } else {
                 gameEngine.levelUpAnimationStartTime = 0L
             }
-        } else if (gameEngine.gameState == GameState.BUILD) {
-            // Display longestDistanceTraveled, highestScore, highestLevel, and starsCollected in build mode
+
+            if (unlockMessage != null && currentTime - unlockMessageStartTime <= unlockMessageDuration) {
+                val unlockPaint = Paint().apply {
+                    isAntiAlias = true
+                    textSize = 50f
+                    color = Color.YELLOW
+                    textAlign = Paint.Align.CENTER
+                    setShadowLayer(4f, 2f, 2f, Color.BLACK)
+                }
+                canvas.drawText(unlockMessage!!, screenWidth / 2f, screenHeight / 2f + 100f, unlockPaint)
+            } else {
+                unlockMessage = null
+            }
+        } else if (gameState == GameState.BUILD) {
             val longestDistanceText = "Longest Distance: ${gameEngine.longestDistanceTraveled.toInt()}"
             val highestScoreText = "Highest Score: ${gameEngine.highestScore}"
             val highestLevelText = "Highest Level: ${gameEngine.highestLevel}"
@@ -579,6 +633,8 @@ class Renderer @Inject constructor(
         if (!asteroidBitmap.isRecycled) asteroidBitmap.recycle()
         if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle()
         if (!enemyShipBitmap.isRecycled) enemyShipBitmap.recycle()
+        if (!bossShipBitmap.isRecycled) bossShipBitmap.recycle()
+        if (!bossProjectileBitmap.isRecycled) bossProjectileBitmap.recycle()
         particleSystem.onDestroy()
     }
 }

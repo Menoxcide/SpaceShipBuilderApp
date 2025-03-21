@@ -93,7 +93,7 @@ class BuildView @Inject constructor(
         renderer.drawPlaceholders(canvas, gameEngine.placeholders)
         renderer.drawParts(canvas, gameEngine.parts)
         gameEngine.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
-        renderer.drawStats(canvas, gameEngine, statusBarHeight)
+        renderer.drawStats(canvas, gameEngine, statusBarHeight, gameState)
         // Draw ship after background to ensure stars are behind
         renderer.drawShip(
             canvas,

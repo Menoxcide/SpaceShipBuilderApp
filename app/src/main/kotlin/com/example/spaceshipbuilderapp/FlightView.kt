@@ -90,8 +90,9 @@ class FlightView @Inject constructor(
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
         renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight)
         renderer.drawEnemyShips(canvas, gameEngine.enemyShips, statusBarHeight)
+        renderer.drawBoss(canvas, gameEngine.getBoss(), statusBarHeight)
         renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
-        renderer.drawStats(canvas, gameEngine, statusBarHeight)
+        renderer.drawStats(canvas, gameEngine, statusBarHeight, gameState)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
     }
 

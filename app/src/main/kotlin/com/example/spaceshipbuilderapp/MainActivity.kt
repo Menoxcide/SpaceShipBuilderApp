@@ -33,12 +33,6 @@ import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.ApiException
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.example.spaceshipbuilderapp.databinding.ActivityMainBinding
 import dagger.hilt.android.AndroidEntryPoint
 import org.json.JSONObject
@@ -53,13 +47,9 @@ import kotlin.math.hypot
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private lateinit var buildView: BuildView
-    private lateinit var flightView: FlightView
     private lateinit var voiceHandler: VoiceCommandHandler
     private lateinit var credentialManager: CredentialManager
     private var partButtons: Map<ImageButton, Pair<String, Bitmap>> = emptyMap()
-    private lateinit var googleSignInClient: GoogleSignInClient
-
     private var initialX = 0f
     private var initialY = 0f
     private var isDragging = false
@@ -78,10 +68,10 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val animationRunnable = object : Runnable {
         override fun run() {
-            buildView.renderer.updateAnimationFrame()
-            flightView.renderer.updateAnimationFrame()
-            if (buildView.isVisible) buildView.invalidate()
-            if (flightView.isVisible) flightView.invalidate()
+            binding.buildView.renderer.updateAnimationFrame()
+            binding.flightView.renderer.updateAnimationFrame()
+            if (binding.buildView.isVisible) binding.buildView.invalidate()
+            if (binding.flightView.isVisible) binding.flightView.invalidate()
             handler.postDelayed(this, 16)
         }
     }
@@ -97,7 +87,7 @@ class MainActivity : AppCompatActivity() {
                 initialY = location[1].toFloat() + (view.height / 2f)
                 isDragging = true
                 draggedPartType = partType
-                buildView.setSelectedPart(GameEngine.Part(partType, bitmap, initialX, initialY, 0f, 1f))
+                binding.buildView.setSelectedPart(GameEngine.Part(partType, bitmap, initialX, initialY, 0f, 1f))
                 if (BuildConfig.DEBUG) Timber.d("$partType selected at (x=$initialX, y=$initialY)")
                 true
             }
@@ -105,7 +95,7 @@ class MainActivity : AppCompatActivity() {
                 if (isDragging) {
                     val x = event.rawX
                     val y = event.rawY
-                    buildView.setSelectedPart(GameEngine.Part(partType, bitmap, x, y, 0f, 1f))
+                    binding.buildView.setSelectedPart(GameEngine.Part(partType, bitmap, x, y, 0f, 1f))
                     if (BuildConfig.DEBUG) Timber.d("Dragging $partType to (x=$x, y=$y)")
                 }
                 true
@@ -133,7 +123,7 @@ class MainActivity : AppCompatActivity() {
                             if (gameEngine.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
                                 val shipCenterX = gameEngine.screenWidth / 2f
                                 val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
-                                buildView.renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+                                binding.buildView.renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
                                 Timber.d("Ship fully assembled and spaceworthy! Triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
                             }
                         } else {
@@ -158,26 +148,26 @@ class MainActivity : AppCompatActivity() {
 
     private val placedPartTouchListener = View.OnTouchListener { view, event ->
         if (gameState != GameState.BUILD) return@OnTouchListener false
-        val part = buildView.gameEngine.parts.find { it.type == draggedPartType }
+        val part = binding.buildView.gameEngine.parts.find { it.type == draggedPartType }
         if (part == null || !isDragging) return@OnTouchListener false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                buildView.gameEngine.parts.remove(part)
-                buildView.setSelectedPart(part)
+                binding.buildView.gameEngine.parts.remove(part)
+                binding.buildView.setSelectedPart(part)
                 if (BuildConfig.DEBUG) Timber.d("Picked up placed $draggedPartType at (x=${part.x}, y=${part.y})")
                 true
             }
             MotionEvent.ACTION_MOVE -> {
                 val x = event.rawX
                 val y = event.rawY
-                buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
+                binding.buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
                 if (BuildConfig.DEBUG) Timber.d("Dragging placed $draggedPartType to (x=$x, y=$y)")
                 true
             }
             MotionEvent.ACTION_UP -> {
                 val x = event.rawX
                 val y = event.rawY
-                buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
+                binding.buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
                 isDragging = false
                 draggedPartType = null
                 view.performClick()
@@ -198,9 +188,6 @@ class MainActivity : AppCompatActivity() {
         // Initialize Credential Manager
         credentialManager = CredentialManager.create(this)
 
-        // Update to use new IDs
-        buildView = binding.buildView
-        flightView = binding.flightView
         voiceHandler = VoiceCommandHandler(this) { /* Callback set later */ }
 
         binding.buildView.setOnTouchListener(placedPartTouchListener)
@@ -269,18 +256,18 @@ class MainActivity : AppCompatActivity() {
                 gameEngine.playerName = "Player"
             }
 
-            buildView.post {
+            binding.buildView.post {
                 // Ensure Renderer's selectedShipSet matches GameEngine's selectedShipSet
-                buildView.renderer.setShipSet(gameEngine.selectedShipSet)
+                binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                 partButtons = mapOf(
-                    binding.cockpitImage to Pair("cockpit", buildView.renderer.cockpitBitmap),
-                    binding.fuelTankImage to Pair("fuel_tank", buildView.renderer.fuelTankBitmap),
-                    binding.engineImage to Pair("engine", buildView.renderer.engineBitmap)
+                    binding.cockpitImage to Pair("cockpit", binding.buildView.renderer.cockpitBitmap),
+                    binding.fuelTankImage to Pair("fuel_tank", binding.buildView.renderer.fuelTankBitmap),
+                    binding.engineImage to Pair("engine", binding.buildView.renderer.engineBitmap)
                 )
                 // Explicitly set the bitmaps for the default ship set
-                binding.cockpitImage.setImageBitmap(buildView.renderer.cockpitBitmap)
-                binding.fuelTankImage.setImageBitmap(buildView.renderer.fuelTankBitmap)
-                binding.engineImage.setImageBitmap(buildView.renderer.engineBitmap)
+                binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
+                binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
+                binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
                 // Ensure the ImageButton widgets are visible
                 binding.cockpitImage.visibility = View.VISIBLE
                 binding.fuelTankImage.visibility = View.VISIBLE
@@ -307,12 +294,12 @@ class MainActivity : AppCompatActivity() {
                 binding.flightView.setUserId(userId!!)
                 gameEngine.setScreenDimensions(screenWidth, screenHeight, statusBarHeight)
                 // Ensure Renderer's selectedShipSet is set before initializing placeholders
-                buildView.renderer.setShipSet(gameEngine.selectedShipSet)
+                binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                 gameEngine.initializePlaceholders(
                     screenWidth, screenHeight,
-                    buildView.renderer.cockpitPlaceholderBitmap,
-                    buildView.renderer.fuelTankPlaceholderBitmap,
-                    buildView.renderer.enginePlaceholderBitmap,
+                    binding.buildView.renderer.cockpitPlaceholderBitmap,
+                    binding.buildView.renderer.fuelTankPlaceholderBitmap,
+                    binding.buildView.renderer.enginePlaceholderBitmap,
                     statusBarHeight
                 )
                 gameEngine.parts.clear()
@@ -340,13 +327,13 @@ class MainActivity : AppCompatActivity() {
                     binding.buildView.setOnTouchListener(placedPartTouchListener)
                     binding.flightView.setGameMode(GameState.BUILD)
                     // Refresh placeholders when returning to build mode
-                    buildView.renderer.setShipSet(gameEngine.selectedShipSet)
+                    binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                     gameEngine.initializePlaceholders(
                         gameEngine.screenWidth,
                         gameEngine.screenHeight,
-                        buildView.renderer.cockpitPlaceholderBitmap,
-                        buildView.renderer.fuelTankPlaceholderBitmap,
-                        buildView.renderer.enginePlaceholderBitmap,
+                        binding.buildView.renderer.cockpitPlaceholderBitmap,
+                        binding.buildView.renderer.fuelTankPlaceholderBitmap,
+                        binding.buildView.renderer.enginePlaceholderBitmap,
                         gameEngine.statusBarHeight
                     )
                     if (BuildConfig.DEBUG) Timber.d("BuildView focused: ${binding.buildView.isFocused}")
@@ -402,27 +389,27 @@ class MainActivity : AppCompatActivity() {
                 if (position in gameEngine.getUnlockedShipSets()) {
                     gameEngine.selectedShipSet = position
                     // Update the Renderer's selectedShipSet
-                    buildView.renderer.setShipSet(position)
+                    binding.buildView.renderer.setShipSet(position)
                     // Update the part buttons to show the selected ship set
                     partButtons = mapOf(
-                        binding.cockpitImage to Pair("cockpit", buildView.renderer.cockpitBitmap),
-                        binding.fuelTankImage to Pair("fuel_tank", buildView.renderer.fuelTankBitmap),
-                        binding.engineImage to Pair("engine", buildView.renderer.engineBitmap)
+                        binding.cockpitImage to Pair("cockpit", binding.buildView.renderer.cockpitBitmap),
+                        binding.fuelTankImage to Pair("fuel_tank", binding.buildView.renderer.fuelTankBitmap),
+                        binding.engineImage to Pair("engine", binding.buildView.renderer.engineBitmap)
                     )
-                    binding.cockpitImage.setImageBitmap(buildView.renderer.cockpitBitmap)
-                    binding.fuelTankImage.setImageBitmap(buildView.renderer.fuelTankBitmap)
-                    binding.engineImage.setImageBitmap(buildView.renderer.engineBitmap)
+                    binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
+                    binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
+                    binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
                     // Refresh placeholders with the new ship set
                     gameEngine.initializePlaceholders(
                         gameEngine.screenWidth,
                         gameEngine.screenHeight,
-                        buildView.renderer.cockpitPlaceholderBitmap,
-                        buildView.renderer.fuelTankPlaceholderBitmap,
-                        buildView.renderer.enginePlaceholderBitmap,
+                        binding.buildView.renderer.cockpitPlaceholderBitmap,
+                        binding.buildView.renderer.fuelTankPlaceholderBitmap,
+                        binding.buildView.renderer.enginePlaceholderBitmap,
                         gameEngine.statusBarHeight
                     )
                     // Redraw the build view to reflect the new ship set
-                    buildView.invalidate()
+                    binding.buildView.invalidate()
                 } else {
                     // Revert to the previous selection if the selected ship is locked
                     binding.shipSpinner.setSelection(gameEngine.selectedShipSet)
