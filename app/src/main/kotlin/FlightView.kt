@@ -6,6 +6,7 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Button
 import timber.log.Timber
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
@@ -26,6 +27,8 @@ class FlightView @Inject constructor(
     private var userId: String? = null
     private var lastProjectileSpawnTime = 0L
     private val projectileSpawnInterval = 1000L // 1 second interval
+
+    private var destroyAllButton: Button? = null
 
     init {
         if (BuildConfig.DEBUG) Timber.d("FlightView initialized")
@@ -49,6 +52,25 @@ class FlightView @Inject constructor(
         this.userId = userId
     }
 
+    fun setDestroyAllButton(button: Button) {
+        destroyAllButton = button
+        updateDestroyAllButton()
+        destroyAllButton?.setOnClickListener {
+            if (gameEngine.destroyAll()) {
+                updateDestroyAllButton()
+            }
+            Timber.d("Destroy All button clicked")
+        }
+    }
+
+    private fun updateDestroyAllButton() {
+        destroyAllButton?.let { button ->
+            button.text = "Destroy All (${gameEngine.destroyAllCharges}/3)"
+            button.isEnabled = gameEngine.destroyAllCharges > 0
+            button.visibility = if (gameEngine.isDestroyAllUnlocked) View.VISIBLE else View.GONE
+        }
+    }
+
     fun setGameMode(mode: GameState) {
         if (mode == GameState.FLIGHT) {
             visibility = View.VISIBLE
@@ -57,10 +79,12 @@ class FlightView @Inject constructor(
             gameEngine.onPowerUpCollectedListener = { x, y ->
                 renderer.particleSystem.addCollectionParticles(x, y)
             }
+            updateDestroyAllButton()
             startUpdateLoop()
             if (BuildConfig.DEBUG) Timber.d("FlightView activated, starting update loop")
         } else {
             visibility = View.GONE
+            destroyAllButton?.visibility = View.GONE
             stopUpdateLoop()
             if (BuildConfig.DEBUG) Timber.d("FlightView deactivated")
         }
@@ -68,11 +92,11 @@ class FlightView @Inject constructor(
 
     override fun onDraw(canvas: Canvas) {
         if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) {
-            Timber.w("onDraw skipped: gameState=${gameState}, visibility=$visibility")
+            Timber.w("onDraw skipped: gameState=$gameState, visibility=$visibility")
             return
         }
         super.onDraw(canvas)
-        Timber.d("onDraw called, visibility=$visibility, gameState=${gameState}")
+        Timber.d("onDraw called, visibility=$visibility, gameState=$gameState")
         renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
         renderer.drawShip(
             canvas,
@@ -92,29 +116,62 @@ class FlightView @Inject constructor(
         renderer.drawEnemyShips(canvas, gameEngine.enemyShips, statusBarHeight)
         renderer.drawBoss(canvas, gameEngine.getBoss(), statusBarHeight)
         renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
+        renderer.drawHomingProjectiles(canvas, gameEngine.homingProjectiles, statusBarHeight)
         renderer.drawStats(canvas, gameEngine, statusBarHeight, gameState)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) return false
-        // Use the same ship bounds as in GameEngine.checkCollision
-        val shipRect = RectF(
-            gameEngine.shipX - gameEngine.maxPartHalfWidth,
-            gameEngine.shipY - gameEngine.totalShipHeight / 2,
-            gameEngine.shipX + gameEngine.maxPartHalfWidth,
-            gameEngine.shipY + gameEngine.totalShipHeight / 2
-        )
 
-        return when (event.actionMasked) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                if (shipRect.contains(event.rawX, event.rawY)) {
-                    isDragging = true
-                    if (BuildConfig.DEBUG) Timber.d("Started dragging ship from (x=${event.rawX}, y=${event.rawY})")
-                    true
-                } else {
-                    false
+                val touchX = event.rawX
+                val touchY = event.rawY
+
+                // Check for enemy ship click
+                for (enemy in gameEngine.enemyShips) {
+                    val enemyRect = RectF(
+                        enemy.x - 75f,
+                        enemy.y - 75f,
+                        enemy.x + 75f,
+                        enemy.y + 75f
+                    )
+                    if (enemyRect.contains(touchX, touchY)) {
+                        gameEngine.launchHomingMissile(enemy)
+                        Timber.d("Clicked enemy ship at (x=${enemy.x}, y=${enemy.y}) with tolerance, launching homing missile")
+                        return true
+                    }
                 }
+
+                // Check for boss click
+                gameEngine.getBoss()?.let { boss ->
+                    val bossRect = RectF(
+                        boss.x - 100f,
+                        boss.y - 100f,
+                        boss.x + 100f,
+                        boss.y + 100f
+                    )
+                    if (bossRect.contains(touchX, touchY)) {
+                        gameEngine.launchHomingMissile(boss)
+                        Timber.d("Clicked boss at (x=${boss.x}, y=${boss.y}) with tolerance, launching homing missile")
+                        return true
+                    }
+                }
+
+                // Check for ship drag
+                val shipRect = RectF(
+                    gameEngine.shipX - gameEngine.maxPartHalfWidth,
+                    gameEngine.shipY - gameEngine.totalShipHeight / 2,
+                    gameEngine.shipX + gameEngine.maxPartHalfWidth,
+                    gameEngine.shipY + gameEngine.totalShipHeight / 2
+                )
+                if (shipRect.contains(touchX, touchY)) {
+                    isDragging = true
+                    if (BuildConfig.DEBUG) Timber.d("Started dragging ship from (x=$touchX, y=$touchY)")
+                    return true
+                }
+                return false
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isDragging) {
@@ -135,14 +192,14 @@ class FlightView @Inject constructor(
                     if (BuildConfig.DEBUG) Timber.d("Ship moved to (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
                     invalidate()
                 }
-                true
+                return true
             }
             MotionEvent.ACTION_UP -> {
                 isDragging = false
                 if (BuildConfig.DEBUG) Timber.d("Stopped dragging ship")
-                true
+                return true
             }
-            else -> false
+            else -> return false
         }
     }
 
@@ -153,10 +210,10 @@ class FlightView @Inject constructor(
                 if (gameState == GameState.FLIGHT && visibility == View.VISIBLE) {
                     gameEngine.update(screenWidth, screenHeight, userId ?: "default")
                     invalidate()
-                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop: gameState=${gameState}, invalidated")
+                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop: gameState=$gameState, invalidated")
                     postDelayed(this, 16)
                 } else {
-                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop skipped: gameState=${gameState}")
+                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop skipped: gameState=$gameState")
                 }
             }
         }

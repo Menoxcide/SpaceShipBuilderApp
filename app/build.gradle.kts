@@ -55,6 +55,7 @@ android {
 }
 
 dependencies {
+    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4") // Use the latest version
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")

@@ -22,10 +22,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
-import androidx.credentials.CredentialManager
-import androidx.credentials.ClearCredentialStateRequest
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.FullScreenContentCallback
@@ -35,7 +31,6 @@ import com.google.android.gms.ads.rewarded.RewardedAd
 import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import com.example.spaceshipbuilderapp.databinding.ActivityMainBinding
 import dagger.hilt.android.AndroidEntryPoint
-import org.json.JSONObject
 import timber.log.Timber
 import android.app.Dialog
 import javax.inject.Inject
@@ -48,7 +43,6 @@ import kotlin.math.hypot
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var voiceHandler: VoiceCommandHandler
-    private lateinit var credentialManager: CredentialManager
     private var partButtons: Map<ImageButton, Pair<String, Bitmap>> = emptyMap()
     private var initialX = 0f
     private var initialY = 0f
@@ -106,20 +100,17 @@ class MainActivity : AppCompatActivity() {
                     val x = event.rawX
                     val y = event.rawY
                     val part = GameEngine.Part(partType, bitmap, x, y, 0f, 1f)
-                    // Check if the part can snap to a placeholder
                     val targetPosition = inputHandler.getTargetPosition(partType)
                     if (targetPosition != null) {
                         val (targetX, targetY) = targetPosition
                         val distance = hypot(x - targetX, y - targetY)
                         if (distance < InputHandler.SNAP_RANGE && !inputHandler.checkOverlap(targetX, targetY, part)) {
-                            // Snap the part to the placeholder position
                             gameEngine.parts.removeAll { it.type == partType }
                             part.x = targetX
                             part.y = targetY
                             part.scale = gameEngine.placeholders.find { it.type == partType }?.scale ?: 1f
                             gameEngine.parts.add(part)
                             if (BuildConfig.DEBUG) Timber.d("Snapped $partType to (x=${part.x}, y=${part.y}) with scale=${part.scale}, parts count: ${gameEngine.parts.size}")
-                            // Check if ship is spaceworthy and trigger celebratory particles
                             if (gameEngine.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
                                 val shipCenterX = gameEngine.screenWidth / 2f
                                 val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
@@ -132,12 +123,11 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         if (BuildConfig.DEBUG) Timber.d("No target position found for $partType")
                     }
-                    gameEngine.selectedPart = null // Clear the selected part in GameEngine
+                    gameEngine.selectedPart = null
                     draggedPartType = null
                     view.visibility = View.VISIBLE
                     view.performClick()
                     if (BuildConfig.DEBUG) Timber.d("Dropped $partType, snapping handled")
-                    // Force recheck of launch button visibility
                     gameEngine.notifyLaunchListener()
                 }
                 true
@@ -185,9 +175,6 @@ class MainActivity : AppCompatActivity() {
 
         if (BuildConfig.DEBUG) Timber.d("View layout initialized")
 
-        // Initialize Credential Manager
-        credentialManager = CredentialManager.create(this)
-
         voiceHandler = VoiceCommandHandler(this) { /* Callback set later */ }
 
         binding.buildView.setOnTouchListener(placedPartTouchListener)
@@ -197,13 +184,15 @@ class MainActivity : AppCompatActivity() {
         // Initialize AdMob SDK
         MobileAds.initialize(this) {
             Timber.d("AdMob SDK initialized")
-            loadRewardedAd() // Load the first ad after initialization
+            loadRewardedAd()
         }
 
         handler.post(animationRunnable)
         requestAudioPermission()
 
-        // Initialize game without sign-in
+        // Initialize the destroyAllButton synchronously to avoid uninitialized access
+        binding.flightView.setDestroyAllButton(binding.destroyAllButton)
+
         initializeGame()
     }
 
@@ -213,12 +202,11 @@ class MainActivity : AppCompatActivity() {
             override fun onAdLoaded(ad: RewardedAd) {
                 rewardedAd = ad
                 Timber.d("Rewarded ad loaded successfully")
-                // Set up full-screen content callback
                 rewardedAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
                     override fun onAdDismissedFullScreenContent() {
                         Timber.d("Rewarded ad dismissed")
                         rewardedAd = null
-                        loadRewardedAd() // Load a new ad for the next use
+                        loadRewardedAd()
                     }
 
                     override fun onAdFailedToShowFullScreenContent(adError: AdError) {
@@ -243,7 +231,6 @@ class MainActivity : AppCompatActivity() {
     private fun initializeGame() {
         CoroutineScope(Dispatchers.Main).launch {
             try {
-                // Use a default userId since sign-in is disabled
                 userId = "default_user"
                 Timber.d("Initializing game with default userId: $userId")
                 gameEngine.loadUserData(userId!!)
@@ -251,30 +238,24 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize user data")
                 showToast(R.string.error_userdata, e.message ?: "Unknown error")
-                // Continue with default values instead of retrying sign-in
                 userId = "default_user"
                 gameEngine.playerName = "Player"
             }
 
             binding.buildView.post {
-                // Ensure Renderer's selectedShipSet matches GameEngine's selectedShipSet
                 binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                 partButtons = mapOf(
                     binding.cockpitImage to Pair("cockpit", binding.buildView.renderer.cockpitBitmap),
                     binding.fuelTankImage to Pair("fuel_tank", binding.buildView.renderer.fuelTankBitmap),
                     binding.engineImage to Pair("engine", binding.buildView.renderer.engineBitmap)
                 )
-                // Explicitly set the bitmaps for the default ship set
                 binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
                 binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
                 binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
-                // Ensure the ImageButton widgets are visible
                 binding.cockpitImage.visibility = View.VISIBLE
                 binding.fuelTankImage.visibility = View.VISIBLE
                 binding.engineImage.visibility = View.VISIBLE
-                // Ensure the selection panel is visible
                 binding.selectionPanel.visibility = View.VISIBLE
-                // Debug visibility and dimensions
                 Timber.d("Selection panel visibility: ${binding.selectionPanel.isVisible}, height: ${binding.selectionPanel.height}")
                 Timber.d("Cockpit image visibility: ${binding.cockpitImage.isVisible}, width: ${binding.cockpitImage.width}, height: ${binding.cockpitImage.height}")
                 Timber.d("Fuel tank image visibility: ${binding.fuelTankImage.isVisible}, width: ${binding.fuelTankImage.width}, height: ${binding.fuelTankImage.height}")
@@ -293,10 +274,10 @@ class MainActivity : AppCompatActivity() {
                 binding.flightView.setStatusBarHeight(statusBarHeight)
                 binding.flightView.setUserId(userId!!)
                 gameEngine.setScreenDimensions(screenWidth, screenHeight, statusBarHeight)
-                // Ensure Renderer's selectedShipSet is set before initializing placeholders
                 binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                 gameEngine.initializePlaceholders(
-                    screenWidth, screenHeight,
+                    screenWidth,
+                    screenHeight,
                     binding.buildView.renderer.cockpitPlaceholderBitmap,
                     binding.buildView.renderer.fuelTankPlaceholderBitmap,
                     binding.buildView.renderer.enginePlaceholderBitmap,
@@ -326,7 +307,6 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     binding.buildView.setOnTouchListener(placedPartTouchListener)
                     binding.flightView.setGameMode(GameState.BUILD)
-                    // Refresh placeholders when returning to build mode
                     binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                     gameEngine.initializePlaceholders(
                         gameEngine.screenWidth,
@@ -337,7 +317,7 @@ class MainActivity : AppCompatActivity() {
                         gameEngine.statusBarHeight
                     )
                     if (BuildConfig.DEBUG) Timber.d("BuildView focused: ${binding.buildView.isFocused}")
-                    setupShipSpinner() // Update spinner when returning to build mode
+                    setupShipSpinner()
                 }
                 val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && gameEngine.parts.size == 3 && !isLaunching
                 setLaunchButtonVisibility(isLaunchReady)
@@ -349,12 +329,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Set up game over listener for ad-based continue
-            gameEngine.setGameOverListener { canContinue, onContinue, onDecline ->
-                if (canContinue) {
-                    showContinueDialog(onContinue, onDecline)
+            gameEngine.setGameOverListener { canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild ->
+                if (canContinue || canUseRevive) {
+                    showContinueDialog(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild)
                 } else {
-                    onDecline()
+                    onReturnToBuild()
                 }
             }
         }
@@ -363,7 +342,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupShipSpinner() {
         val unlockedShipSets = gameEngine.getUnlockedShipSets()
         val shipNames = mutableListOf<String>()
-        for (i in 0..2) { // We have 3 ship sets (0, 1, 2)
+        for (i in 0..2) {
             if (i in unlockedShipSets) {
                 shipNames.add("Ship Set ${i + 1}")
             } else {
@@ -380,17 +359,13 @@ class MainActivity : AppCompatActivity() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.shipSpinner.adapter = adapter
 
-        // Set the current selection
         binding.shipSpinner.setSelection(gameEngine.selectedShipSet)
 
-        // Handle selection
         binding.shipSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 if (position in gameEngine.getUnlockedShipSets()) {
                     gameEngine.selectedShipSet = position
-                    // Update the Renderer's selectedShipSet
                     binding.buildView.renderer.setShipSet(position)
-                    // Update the part buttons to show the selected ship set
                     partButtons = mapOf(
                         binding.cockpitImage to Pair("cockpit", binding.buildView.renderer.cockpitBitmap),
                         binding.fuelTankImage to Pair("fuel_tank", binding.buildView.renderer.fuelTankBitmap),
@@ -399,7 +374,6 @@ class MainActivity : AppCompatActivity() {
                     binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
                     binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
                     binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
-                    // Refresh placeholders with the new ship set
                     gameEngine.initializePlaceholders(
                         gameEngine.screenWidth,
                         gameEngine.screenHeight,
@@ -408,10 +382,8 @@ class MainActivity : AppCompatActivity() {
                         binding.buildView.renderer.enginePlaceholderBitmap,
                         gameEngine.statusBarHeight
                     )
-                    // Redraw the build view to reflect the new ship set
                     binding.buildView.invalidate()
                 } else {
-                    // Revert to the previous selection if the selected ship is locked
                     binding.shipSpinner.setSelection(gameEngine.selectedShipSet)
                     val requirements = when (position) {
                         1 -> "Level 20 and 20 Stars"
@@ -422,45 +394,57 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            override fun onNothingSelected(parent: AdapterView<*>) {
-                // Do nothing
-            }
+            override fun onNothingSelected(parent: AdapterView<*>) {}
         }
 
-        // Enable/disable spinner items based on unlocked status
         binding.shipSpinner.isEnabled = gameState == GameState.BUILD
     }
 
-    private fun showContinueDialog(onContinue: () -> Unit, onDecline: () -> Unit) {
+    private fun showContinueDialog(
+        canContinueWithAd: Boolean,
+        canUseRevive: Boolean,
+        onContinueWithAd: () -> Unit,
+        onContinueWithRevive: () -> Unit,
+        onReturnToBuild: () -> Unit
+    ) {
         val dialog = Dialog(this)
         dialog.setContentView(R.layout.dialog_continue)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
         val messageText = dialog.findViewById<TextView>(R.id.continueMessage)
         val watchAdButton = dialog.findViewById<Button>(R.id.watchAdButton)
+        val useReviveButton = dialog.findViewById<Button>(R.id.useReviveButton)
         val returnButton = dialog.findViewById<Button>(R.id.returnButton)
 
-        messageText.text = "Game Over! Watch an ad to continue?"
+        messageText.text = "Game Over! Continue?"
         watchAdButton.text = "Watch Ad"
+        useReviveButton.text = "Use Revive (${gameEngine.reviveCount}/3)"
         returnButton.text = "Return to Build"
+
+        watchAdButton.visibility = if (canContinueWithAd) View.VISIBLE else View.GONE
+        useReviveButton.visibility = if (canUseRevive) View.VISIBLE else View.GONE
 
         watchAdButton.setOnClickListener {
             if (rewardedAd != null) {
                 rewardedAd?.show(this) { rewardItem ->
-                    // Reward granted, continue the game
                     Timber.d("User earned reward: ${rewardItem.amount} ${rewardItem.type}")
-                    onContinue()
+                    onContinueWithAd()
                 }
                 dialog.dismiss()
             } else {
                 showToast("Ad not ready, please try again later", Toast.LENGTH_LONG)
-                onDecline()
+                onReturnToBuild()
                 dialog.dismiss()
             }
         }
 
+        useReviveButton.setOnClickListener {
+            onContinueWithRevive()
+            dialog.dismiss()
+        }
+
         returnButton.setOnClickListener {
-            onDecline()
+            onReturnToBuild()
             dialog.dismiss()
         }
 
@@ -504,7 +488,6 @@ class MainActivity : AppCompatActivity() {
             showLeaderboard()
         }
 
-        // Add Galactic Shop button listener
         binding.shopButton.setOnClickListener {
             if (BuildConfig.DEBUG) Timber.d("Galactic Shop button clicked")
             val intent = Intent(this, GalacticShopActivity::class.java)

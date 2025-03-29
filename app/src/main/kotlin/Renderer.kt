@@ -52,6 +52,8 @@ class Renderer @Inject constructor(
         ?: throw IllegalStateException("Enemy ship bitmap not found")
     private val bossProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_projectile)
         ?: throw IllegalStateException("Boss projectile bitmap not found")
+    private val homingProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.homing_missile)
+        ?: throw IllegalStateException("Homing missile bitmap not found")
 
     private val bossShipBitmaps: List<Bitmap> = listOf(
         BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship_1)
@@ -270,6 +272,11 @@ class Renderer @Inject constructor(
         strokeWidth = 2f
         setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
+    private val homingProjectilePaint = Paint().apply { isAntiAlias = true }
+    private val missileIndicatorPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.YELLOW
+    }
     private var unlockMessage: String? = null
     private var unlockMessageStartTime: Long = 0L
     private val unlockMessageDuration = 5000L
@@ -426,6 +433,21 @@ class Renderer @Inject constructor(
                 canvas.drawBitmap(it, spriteX, spriteY, powerUpPaint)
             }
 
+            val indicatorSize = 10f
+            val indicatorSpacing = 5f
+            val totalWidth = (indicatorSize * 3) + (indicatorSpacing * 2)
+            val indicatorXStart = shipX - totalWidth / 2f
+            val indicatorY = y - 20f
+            for (i in 0 until 3) {
+                missileIndicatorPaint.alpha = if (i < gameEngine.missileCount) 255 else 50
+                canvas.drawCircle(
+                    indicatorXStart + i * (indicatorSize + indicatorSpacing) + indicatorSize / 2f,
+                    indicatorY,
+                    indicatorSize / 2f,
+                    missileIndicatorPaint
+                )
+            }
+
             particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height, gameEngine.speedBoostActive)
             particleSystem.drawExhaustParticles(canvas)
             particleSystem.drawCollectionParticles(canvas)
@@ -435,6 +457,7 @@ class Renderer @Inject constructor(
             particleSystem.drawPowerUpSpriteParticles(canvas)
             particleSystem.drawExplosionParticles(canvas)
             particleSystem.drawScoreTextParticles(canvas)
+            particleSystem.drawMissileExhaustParticles(canvas) // Added for missile particles
 
             val barWidth = 8f
             val offset = 2f
@@ -564,6 +587,20 @@ class Renderer @Inject constructor(
         }
     }
 
+    fun drawHomingProjectiles(canvas: Canvas, homingProjectiles: List<GameEngine.HomingProjectile>, statusBarHeight: Float) {
+        if (BuildConfig.DEBUG) Timber.d("Drawing ${homingProjectiles.size} homing projectiles")
+        homingProjectiles.forEach { projectile ->
+            val scaledBitmap = Bitmap.createScaledBitmap(homingProjectileBitmap, 20, 20, true)
+            canvas.drawBitmap(
+                scaledBitmap,
+                projectile.x - scaledBitmap.width / 2f,
+                projectile.y - scaledBitmap.height / 2f,
+                homingProjectilePaint
+            )
+            if (BuildConfig.DEBUG) Timber.d("Drawing homing projectile at (x=${projectile.x}, y=${projectile.y})")
+        }
+    }
+
     fun drawStats(canvas: Canvas, gameEngine: GameEngine, statusBarHeight: Float, gameState: GameState) {
         val currentTime = System.currentTimeMillis()
         val textHeight = 100f
@@ -644,6 +681,7 @@ class Renderer @Inject constructor(
         if (!enemyShipBitmap.isRecycled) enemyShipBitmap.recycle()
         bossShipBitmaps.forEach { if (!it.isRecycled) it.recycle() }
         if (!bossProjectileBitmap.isRecycled) bossProjectileBitmap.recycle()
+        if (!homingProjectileBitmap.isRecycled) homingProjectileBitmap.recycle()
         particleSystem.onDestroy()
     }
 }

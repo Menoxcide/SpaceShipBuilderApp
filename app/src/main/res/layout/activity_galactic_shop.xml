@@ -64,6 +64,17 @@
                 android:textSize="16sp"
                 android:textColor="#BBBBBB" />
 
+            <TextView
+                android:id="@+id/shipSet2Tooltip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:background="#80000000"
+                android:padding="4dp"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/unlockShipSet2Button"
                 android:layout_width="wrap_content"
@@ -110,11 +121,128 @@
                 android:textSize="16sp"
                 android:textColor="#BBBBBB" />
 
+            <TextView
+                android:id="@+id/shipSet3Tooltip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:background="#80000000"
+                android:padding="4dp"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/unlockShipSet3Button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Unlock"
+                android:enabled="false" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Revive Item -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:layout_marginTop="16dp">
+
+        <ImageView
+            android:id="@+id/reviveImage"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:src="@drawable/revive_icon"
+            android:scaleType="fitCenter" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Revive"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cost: 10 Stars"
+                android:textSize="16sp"
+                android:textColor="#BBBBBB" />
+
+            <TextView
+                android:id="@+id/reviveCountText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Revives: 0/3"
+                android:textSize="16sp"
+                android:textColor="#BBBBBB" />
+
+            <Button
+                android:id="@+id/buyReviveButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Buy Revive"
+                android:enabled="false" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Destroy All Item -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:layout_marginTop="16dp">
+
+        <ImageView
+            android:id="@+id/destroyAllImage"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:src="@drawable/destroy_all_icon"
+            android:scaleType="fitCenter" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Destroy All Charge"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cost: 25 Stars"
+                android:textSize="16sp"
+                android:textColor="#BBBBBB" />
+
+            <TextView
+                android:id="@+id/destroyAllChargesText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Destroy All Charges: 0/3"
+                android:textSize="16sp"
+                android:textColor="#BBBBBB" />
+
+            <Button
+                android:id="@+id/buyDestroyAllButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Buy Destroy All Charge"
                 android:enabled="false" />
         </LinearLayout>
     </LinearLayout>

@@ -22,6 +22,13 @@
         android:layout_height="wrap_content"
         android:text="Watch Ad"
         android:layout_marginBottom="8dp"/>
+    <Button
+        android:id="@+id/useReviveButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Use Revive"
+        android:visibility="gone"
+        android:layout_marginTop="8dp" />
 
     <Button
         android:id="@+id/returnButton"

@@ -25,6 +25,7 @@ class ParticleSystem(private val context: Context) {
     private val explosionParticles = CopyOnWriteArrayList<ExplosionParticle>()
     private val powerUpSpriteParticles = CopyOnWriteArrayList<PowerUpSpriteParticle>()
     private val scoreTextParticles = CopyOnWriteArrayList<ScoreTextParticle>()
+    private val missileExhaustParticles = CopyOnWriteArrayList<MissileExhaustParticle>() // Added for missile exhaust
 
     private val exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
     private val exhaustPaint = Paint().apply { isAntiAlias = true }
@@ -46,6 +47,10 @@ class ParticleSystem(private val context: Context) {
         textSize = 30f
         color = Color.GREEN
         textAlign = Paint.Align.CENTER
+    }
+    private val missileExhaustPaint = Paint().apply { // Added for missile exhaust
+        isAntiAlias = true
+        color = Color.YELLOW
     }
     private val powerUpTextPaints = mapOf(
         "power_up" to Paint().apply {
@@ -113,6 +118,7 @@ class ParticleSystem(private val context: Context) {
         const val EXPLOSION_LIFE_DECAY = 0.03f
         const val POWER_UP_SPRITE_COUNT = 5
         const val SCORE_TEXT_LIFE_DECAY = 0.02f
+        const val MISSILE_EXHAUST_LIFE_DECAY = 0.05f // Added for missile exhaust
     }
 
     data class ExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
@@ -198,6 +204,15 @@ class ParticleSystem(private val context: Context) {
         fun update() {
             y += speedY
             life -= SCORE_TEXT_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class MissileExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float) { // Added for missile exhaust
+        fun update() {
+            x += speedX
+            y += speedY
+            life -= MISSILE_EXHAUST_LIFE_DECAY
         }
         fun isDead() = life <= 0f
     }
@@ -335,6 +350,23 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Added score text particle at (x=$x, y=$y) with text: $text")
     }
 
+    fun addMissileExhaustParticles(x: Float, y: Float) { // Added for missile exhaust
+        repeat(2) { // Fewer particles for performance
+            val speedX = Random.nextFloat() * 2f - 1f
+            val speedY = Random.nextFloat() * 3f + 2f
+            missileExhaustParticles.add(
+                MissileExhaustParticle(
+                    x = x,
+                    y = y,
+                    speedX = speedX,
+                    speedY = speedY,
+                    life = 0.5f, // Short lifespan for exhaust
+                    size = Random.nextFloat() * 3f + 2f
+                )
+            )
+        }
+    }
+
     fun drawExhaustParticles(canvas: Canvas) {
         val particlesToRemove = mutableListOf<ExhaustParticle>()
         exhaustParticles.forEach { particle ->
@@ -350,9 +382,9 @@ class ParticleSystem(private val context: Context) {
                 set(colorScale)
             })
             canvas.withSave {
-                canvas.translate(particle.x, particle.y)
-                canvas.scale(particle.life, particle.life, EXHAUST_WIDTH / 2, EXHAUST_HEIGHT / 2)
-                canvas.drawBitmap(exhaustBitmap, 0f, 0f, exhaustPaint)
+                translate(particle.x, particle.y)
+                scale(particle.life, particle.life, EXHAUST_WIDTH / 2, EXHAUST_HEIGHT / 2)
+                drawBitmap(exhaustBitmap, 0f, 0f, exhaustPaint)
             }
             if (particle.isDead()) particlesToRemove.add(particle)
         }
@@ -420,9 +452,9 @@ class ParticleSystem(private val context: Context) {
             val scaledWidth = particle.bitmap.width * particle.scale
             val scaledHeight = particle.bitmap.height * particle.scale
             canvas.withSave {
-                canvas.translate(particle.x - scaledWidth / 2, particle.y - scaledHeight / 2)
-                canvas.scale(particle.scale, particle.scale)
-                canvas.drawBitmap(particle.bitmap, 0f, 0f, powerUpSpritePaint)
+                translate(particle.x - scaledWidth / 2, particle.y - scaledHeight / 2)
+                scale(particle.scale, particle.scale)
+                drawBitmap(particle.bitmap, 0f, 0f, powerUpSpritePaint)
             }
             if (particle.isDead()) particlesToRemove.add(particle)
         }
@@ -467,6 +499,18 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${scoreTextParticles.size} score text particles")
     }
 
+    fun drawMissileExhaustParticles(canvas: Canvas) { // Added for missile exhaust
+        val particlesToRemove = mutableListOf<MissileExhaustParticle>()
+        missileExhaustParticles.forEach { particle ->
+            particle.update()
+            missileExhaustPaint.alpha = (particle.life * 255).toInt()
+            canvas.drawCircle(particle.x, particle.y, particle.size, missileExhaustPaint)
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        missileExhaustParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${missileExhaustParticles.size} missile exhaust particles")
+    }
+
     fun clearParticles() {
         exhaustParticles.clear()
         warpParticles.clear()
@@ -477,6 +521,7 @@ class ParticleSystem(private val context: Context) {
         explosionParticles.clear()
         powerUpSpriteParticles.clear()
         scoreTextParticles.clear()
+        missileExhaustParticles.clear() // Added cleanup
     }
 
     fun onDestroy() {
