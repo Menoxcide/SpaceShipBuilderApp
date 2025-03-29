@@ -7,7 +7,8 @@
     <FrameLayout
         android:id="@+id/gameContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:layout_above="@id/selectionPanel">
 
         <com.example.spaceshipbuilderapp.BuildView
             android:id="@+id/build_view"
@@ -20,10 +21,8 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="gone" />
-
     </FrameLayout>
 
-    <!-- Added Name Input -->
     <EditText
         android:id="@+id/playerNameInput"
         android:layout_width="wrap_content"
@@ -36,42 +35,15 @@
         android:maxLength="20"
         android:visibility="gone" />
 
-    <LinearLayout
-        android:id="@+id/buttonLayout"
+    <!-- Launch Button: Position will be set programmatically -->
+    <Button
+        android:id="@+id/launchButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:orientation="horizontal"
-        android:padding="10dp">
-
-        <Button
-            android:id="@+id/launchButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="LAUNCH"
-            android:backgroundTint="@android:color/holo_green_dark"
-            android:textColor="@android:color/white" />
-
-        <Button
-            android:id="@+id/leaderboardButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:text="LEADERBOARD"
-            android:backgroundTint="@android:color/holo_blue_light"
-            android:textColor="@android:color/white" />
-
-        <Button
-            android:id="@+id/shopButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:text="GALACTIC SHOP"
-            android:backgroundTint="@android:color/holo_purple"
-            android:textColor="@android:color/white" />
-
-    </LinearLayout>
+        android:text="LAUNCH"
+        android:backgroundTint="@android:color/holo_green_dark"
+        android:textColor="@android:color/white"
+        android:visibility="gone" />
 
     <LinearLayout
         android:id="@+id/selectionPanel"
@@ -166,7 +138,43 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Added Destroy All Button -->
+    <LinearLayout
+        android:id="@+id/buttonLayout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:orientation="horizontal"
+        android:padding="10dp">
+
+        <Button
+            android:id="@+id/leaderboardButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="LEADERBOARD"
+            android:backgroundTint="@android:color/holo_blue_light"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/achievementsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="Achievements"
+            android:backgroundTint="@android:color/darker_gray"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/shopButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="GALACTIC SHOP"
+            android:backgroundTint="@android:color/holo_purple"
+            android:textColor="@android:color/white" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/destroyAllButton"
         android:layout_width="wrap_content"

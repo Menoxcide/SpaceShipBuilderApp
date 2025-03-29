@@ -27,7 +27,8 @@ class Renderer @Inject constructor(
     private val context: Context,
     val particleSystem: ParticleSystem
 ) {
-    private val stars = mutableListOf<Star>()
+    private val distantStars = mutableListOf<Star>()
+    private val nearStars = mutableListOf<Star>()
     private var animationFrame = 0f
     private var screenWidth: Float = 0f
     private var screenHeight: Float = 0f
@@ -107,16 +108,22 @@ class Renderer @Inject constructor(
         var x: Float,
         var y: Float,
         val size: Float,
-        val brightness: Float,
-        var phase: Float
+        val baseBrightness: Float,
+        val phase: Float,
+        val speed: Float,
+        val color: Int
     )
 
     private val backgroundPaint = Paint().apply {
-        shader = LinearGradient(0f, 0f, 0f, 2400f, Color.parseColor("#1A0B2E"), Color.parseColor("#4B0082"), Shader.TileMode.CLAMP)
+        shader = LinearGradient(
+            0f, 0f, 0f, 2400f,
+            intArrayOf(Color.parseColor("#1A0B2E"), Color.parseColor("#2E1A4B"), Color.parseColor("#4B0082")),
+            floatArrayOf(0f, 0.5f, 1f),
+            Shader.TileMode.CLAMP
+        )
     }
     private val starPaint = Paint().apply {
         isAntiAlias = true
-        color = Color.WHITE
     }
     private val hologramPaint = Paint().apply {
         color = Color.argb(100, 0, 255, 0)
@@ -291,18 +298,48 @@ class Renderer @Inject constructor(
         }
     }
 
+    init {
+        // Pre-generate stars once at initialization
+        repeat(100) { // Distant stars
+            distantStars.add(
+                Star(
+                    x = Random.nextFloat() * 10000f, // Larger range for wrapping
+                    y = Random.nextFloat() * 10000f,
+                    size = Random.nextFloat() * 1f + 0.5f,
+                    baseBrightness = Random.nextFloat() * 0.5f + 0.1f,
+                    phase = Random.nextFloat() * 2 * Math.PI.toFloat(),
+                    speed = 1f, // Slow for distant stars
+                    color = Color.argb(255, 200, 200, 255) // Slightly bluish tint
+                )
+            )
+        }
+        repeat(50) { // Near stars
+            nearStars.add(
+                Star(
+                    x = Random.nextFloat() * 10000f,
+                    y = Random.nextFloat() * 10000f,
+                    size = Random.nextFloat() * 2f + 1f,
+                    baseBrightness = Random.nextFloat() * 0.5f + 0.5f,
+                    phase = Random.nextFloat() * 2 * Math.PI.toFloat(),
+                    speed = 3f, // Faster for near stars
+                    color = Color.argb(255, 255, 255, 200) // Slightly yellowish tint
+                )
+            )
+        }
+    }
+
     fun setShipSet(shipSet: Int) {
         selectedShipSet = shipSet
         Timber.d("Renderer ship set updated to: $selectedShipSet")
     }
 
     fun updateAnimationFrame() {
-        animationFrame = (animationFrame + 1) % 360
+        animationFrame = (animationFrame + 0.05f) % (2 * Math.PI.toFloat()) // Smoother animation cycle
     }
 
-    fun showUnlockMessage(unlockedSets: List<Int>) {
-        if (unlockedSets.isNotEmpty()) {
-            unlockMessage = "Unlocked new ship set(s): ${unlockedSets.joinToString(", ")}"
+    fun showUnlockMessage(messages: List<String>) { // Changed to List<String>
+        if (messages.isNotEmpty()) {
+            unlockMessage = "Unlocked: ${messages.joinToString(", ")}"
             unlockMessageStartTime = System.currentTimeMillis()
             Timber.d("Showing unlock message: $unlockMessage")
         }
@@ -312,48 +349,49 @@ class Renderer @Inject constructor(
         this.screenWidth = screenWidth
         this.screenHeight = screenHeight
 
+        // Draw nebula-like gradient
         val gradientIndex = (level - 1) / 10 % 5
         val gradients = listOf(
-            Pair(Color.parseColor("#1A0B2E"), Color.parseColor("#4B0082")),
-            Pair(Color.parseColor("#0A2E4B"), Color.parseColor("#008282")),
-            Pair(Color.parseColor("#2E0A4B"), Color.parseColor("#82004B")),
-            Pair(Color.parseColor("#4B2E0A"), Color.parseColor("#828200")),
-            Pair(Color.parseColor("#0A4B2E"), Color.parseColor("#00824B"))
+            intArrayOf(Color.parseColor("#1A0B2E"), Color.parseColor("#2E1A4B"), Color.parseColor("#4B0082")),
+            intArrayOf(Color.parseColor("#0A2E4B"), Color.parseColor("#1A4B2E"), Color.parseColor("#008282")),
+            intArrayOf(Color.parseColor("#2E0A4B"), Color.parseColor("#4B2E0A"), Color.parseColor("#82004B")),
+            intArrayOf(Color.parseColor("#4B2E0A"), Color.parseColor("#2E4B0A"), Color.parseColor("#828200")),
+            intArrayOf(Color.parseColor("#0A4B2E"), Color.parseColor("#2E0A4B"), Color.parseColor("#00824B"))
         )
-        val (startColor, endColor) = gradients[gradientIndex]
-        backgroundPaint.shader = LinearGradient(0f, 0f, 0f, screenHeight, startColor, endColor, Shader.TileMode.CLAMP)
+        backgroundPaint.shader = LinearGradient(
+            0f, 0f, 0f, screenHeight,
+            gradients[gradientIndex],
+            floatArrayOf(0f, 0.5f, 1f),
+            Shader.TileMode.CLAMP
+        )
         canvas.drawRect(0f, 0f, screenWidth, screenHeight, backgroundPaint)
 
-        if (stars.isEmpty()) {
-            repeat(20) {
-                stars.add(
-                    Star(
-                        x = Random.nextFloat() * screenWidth,
-                        y = Random.nextFloat() * screenHeight,
-                        size = Random.nextFloat() * 2f + 1f,
-                        brightness = Random.nextFloat(),
-                        phase = Random.nextFloat() * 2 * Math.PI.toFloat()
-                    )
-                )
-            }
-        }
-        stars.forEach { star ->
-            star.y += 2f
-            star.x += sin((System.currentTimeMillis() / 1000f + star.phase).toDouble()).toFloat() * 0.5f
-            if (star.y > screenHeight) {
-                star.y = 0f
+        // Draw distant stars
+        distantStars.forEach { star ->
+            star.y += star.speed
+            if (star.y > screenHeight + star.size) {
+                star.y -= screenHeight + star.size * 2 // Wrap around
                 star.x = Random.nextFloat() * screenWidth
-                star.phase = Random.nextFloat() * 2 * Math.PI.toFloat()
             }
-            if (star.x < 0f) star.x = screenWidth
-            if (star.x > screenWidth) star.x = 0f
-            val brightness = (sin(animationFrame * 0.05f + star.brightness * Math.PI.toFloat()) * 0.5f + 0.5f).coerceIn(0f, 1f)
-            starPaint.alpha = (brightness * 255).toInt()
+            val brightness = star.baseBrightness * (sin(animationFrame + star.phase) * 0.3f + 0.7f).coerceIn(0f, 1f)
+            starPaint.color = Color.argb((brightness * 255).toInt(), Color.red(star.color), Color.green(star.color), Color.blue(star.color))
+            canvas.drawCircle(star.x, star.y, star.size, starPaint)
+        }
+
+        // Draw near stars (parallax effect)
+        nearStars.forEach { star ->
+            star.y += star.speed
+            if (star.y > screenHeight + star.size) {
+                star.y -= screenHeight + star.size * 2 // Wrap around
+                star.x = Random.nextFloat() * screenWidth
+            }
+            val brightness = star.baseBrightness * (sin(animationFrame + star.phase) * 0.4f + 0.6f).coerceIn(0f, 1f)
+            starPaint.color = Color.argb((brightness * 255).toInt(), Color.red(star.color), Color.green(star.color), Color.blue(star.color))
             canvas.drawCircle(star.x, star.y, star.size, starPaint)
         }
     }
 
-    fun drawParts(canvas: Canvas, parts: List<GameEngine.Part>) {
+    fun drawParts(canvas: Canvas, parts: List<Part>) {
         parts.forEach { part ->
             val x = part.x - (part.bitmap.width * part.scale / 2f)
             val y = part.y - (part.bitmap.height * part.scale / 2f)
@@ -368,7 +406,7 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun drawPlaceholders(canvas: Canvas, placeholders: List<GameEngine.Part>) {
+    fun drawPlaceholders(canvas: Canvas, placeholders: List<Part>) {
         placeholders.forEach { part ->
             val x = part.x - (part.bitmap.width * part.scale / 2f)
             val y = part.y - (part.bitmap.height * part.scale / 2f)
@@ -382,14 +420,14 @@ class Renderer @Inject constructor(
     fun drawShip(
         canvas: Canvas,
         gameEngine: GameEngine,
-        shipParts: List<GameEngine.Part>,
+        shipParts: List<Part>,
         screenWidth: Float,
         screenHeight: Float,
         shipX: Float,
         shipY: Float,
         gameState: GameState,
         mergedShipBitmap: Bitmap?,
-        placeholders: List<GameEngine.Part>
+        placeholders: List<Part>
     ) {
         selectedShipSet = gameEngine.selectedShipSet
 
@@ -457,7 +495,7 @@ class Renderer @Inject constructor(
             particleSystem.drawPowerUpSpriteParticles(canvas)
             particleSystem.drawExplosionParticles(canvas)
             particleSystem.drawScoreTextParticles(canvas)
-            particleSystem.drawMissileExhaustParticles(canvas) // Added for missile particles
+            particleSystem.drawMissileExhaustParticles(canvas)
 
             val barWidth = 8f
             val offset = 2f
@@ -498,7 +536,7 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun drawPowerUps(canvas: Canvas, powerUps: List<GameEngine.PowerUp>, statusBarHeight: Float) {
+    fun drawPowerUps(canvas: Canvas, powerUps: List<PowerUp>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${powerUps.size} power-ups")
         powerUps.forEach { powerUp ->
             val y = powerUp.y
@@ -518,7 +556,7 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun drawAsteroids(canvas: Canvas, asteroids: List<GameEngine.Asteroid>, statusBarHeight: Float) {
+    fun drawAsteroids(canvas: Canvas, asteroids: List<Asteroid>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${asteroids.size} asteroids")
         asteroids.forEach { asteroid ->
             val y = asteroid.y
@@ -538,15 +576,15 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun drawProjectiles(canvas: Canvas, projectiles: List<GameEngine.Projectile>, statusBarHeight: Float) {
+    fun drawProjectiles(canvas: Canvas, projectiles: List<Projectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${projectiles.size} projectiles")
         projectiles.forEach { projectile ->
-            canvas.drawCircle(projectile.x, projectile.y, GameEngine.PROJECTILE_SIZE, projectilePaint)
+            canvas.drawCircle(projectile.x, projectile.y, FlightModeManager.PROJECTILE_SIZE, projectilePaint)
             if (BuildConfig.DEBUG) Timber.d("Drawing projectile at (x=${projectile.x}, y=${projectile.y})")
         }
     }
 
-    fun drawEnemyShips(canvas: Canvas, enemyShips: List<GameEngine.EnemyShip>, statusBarHeight: Float) {
+    fun drawEnemyShips(canvas: Canvas, enemyShips: List<EnemyShip>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyShips.size} enemy ships")
         enemyShips.forEach { enemy ->
             val scaledBitmap = Bitmap.createScaledBitmap(enemyShipBitmap, 100, 100, true)
@@ -555,7 +593,7 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun drawBoss(canvas: Canvas, boss: GameEngine.BossShip?, statusBarHeight: Float) {
+    fun drawBoss(canvas: Canvas, boss: BossShip?, statusBarHeight: Float) {
         if (boss == null) return
         if (BuildConfig.DEBUG) Timber.d("Drawing boss at (x=${boss.x}, y=${boss.y}) with tier=${boss.tier}")
         val bitmapIndex = (boss.tier - 1) % bossShipBitmaps.size
@@ -578,7 +616,7 @@ class Renderer @Inject constructor(
         canvas.drawRect(barX, barY, barX + barWidth, barY + barHeight, bossHpBarBorderPaint)
     }
 
-    fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<GameEngine.Projectile>, statusBarHeight: Float) {
+    fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<Projectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyProjectiles.size} enemy projectiles")
         enemyProjectiles.forEach { projectile ->
             val scaledBitmap = Bitmap.createScaledBitmap(bossProjectileBitmap, 20, 20, true)
@@ -587,7 +625,7 @@ class Renderer @Inject constructor(
         }
     }
 
-    fun drawHomingProjectiles(canvas: Canvas, homingProjectiles: List<GameEngine.HomingProjectile>, statusBarHeight: Float) {
+    fun drawHomingProjectiles(canvas: Canvas, homingProjectiles: List<HomingProjectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${homingProjectiles.size} homing projectiles")
         homingProjectiles.forEach { projectile ->
             val scaledBitmap = Bitmap.createScaledBitmap(homingProjectileBitmap, 20, 20, true)
@@ -626,7 +664,7 @@ class Renderer @Inject constructor(
             canvas.drawText(scoreText, startX, startY + textHeight, scorePaint)
             canvas.drawText(levelText, startX, startY + 2 * textHeight, graffitiPaint)
 
-            if (gameEngine.levelUpAnimationStartTime > 0L && currentTime - gameEngine.levelUpAnimationStartTime <= GameEngine.LEVEL_UP_ANIMATION_DURATION) {
+            if (gameEngine.levelUpAnimationStartTime > 0L && currentTime - gameEngine.levelUpAnimationStartTime <= FlightModeManager.LEVEL_UP_ANIMATION_DURATION) {
                 val levelTextDisplay = "Level ${gameEngine.level}"
                 canvas.drawText(levelTextDisplay, screenWidth / 2f, screenHeight / 2f, levelUpPaint)
             } else {

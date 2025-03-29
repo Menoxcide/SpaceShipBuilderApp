@@ -35,13 +35,76 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideGameStateManager(): GameStateManager = GameStateManager()
+
+    @Provides
+    @Singleton
+    fun provideBuildModeManager(renderer: Renderer): BuildModeManager = BuildModeManager(renderer)
+
+    @Provides
+    @Singleton
+    fun provideShipManager(): ShipManager = ShipManager()
+
+    @Provides
+    @Singleton
+    fun provideGameObjectManager(
+        renderer: Renderer,
+        audioManager: AudioManager
+    ): GameObjectManager = GameObjectManager(renderer, audioManager)
+
+    @Provides
+    @Singleton
+    fun provideCollisionManager(
+        renderer: Renderer,
+        audioManager: AudioManager,
+        gameObjectManager: GameObjectManager
+    ): CollisionManager = CollisionManager(renderer, audioManager, gameObjectManager)
+
+    @Provides
+    @Singleton
+    fun providePowerUpManager(): PowerUpManager = PowerUpManager()
+
+    @Provides
+    @Singleton
+    fun provideAudioManager(@ApplicationContext context: Context): AudioManager = AudioManager(context)
+
+    @Provides
+    @Singleton
+    fun provideFlightModeManager(
+        shipManager: ShipManager,
+        gameObjectManager: GameObjectManager,
+        collisionManager: CollisionManager,
+        powerUpManager: PowerUpManager,
+        audioManager: AudioManager,
+        gameStateManager: GameStateManager
+    ): FlightModeManager = FlightModeManager(
+        shipManager,
+        gameObjectManager,
+        collisionManager,
+        powerUpManager,
+        audioManager,
+        gameStateManager
+    )
+
+    @Provides
+    @Singleton
     fun provideGameEngine(
         @ApplicationContext context: Context,
         renderer: Renderer,
-        highscoreManager: HighscoreManager
-    ): GameEngine {
-        return GameEngine(context, renderer, highscoreManager)
-    }
+        highscoreManager: HighscoreManager,
+        gameStateManager: GameStateManager,
+        buildModeManager: BuildModeManager,
+        flightModeManager: FlightModeManager,
+        achievementManager: AchievementManager
+    ): GameEngine = GameEngine(
+        context,
+        renderer,
+        highscoreManager,
+        gameStateManager,
+        buildModeManager,
+        flightModeManager,
+        achievementManager
+    )
 
     @Provides
     @Singleton
@@ -53,5 +116,13 @@ object AppModule {
     @Singleton
     fun provideVoiceCommandHandler(@ApplicationContext context: Context): VoiceCommandHandler {
         return VoiceCommandHandler(context) { /* Dummy callback, overridden in MainActivity */ }
+    }
+
+    @Provides
+    @Singleton
+    fun provideAchievementManager(
+        @ApplicationContext context: Context
+    ): AchievementManager {
+        return AchievementManager(context)
     }
 }

@@ -18,6 +18,9 @@ class FlightView @Inject constructor(
 ) : View(context, attrs) {
     @Inject lateinit var gameEngine: GameEngine
     @Inject lateinit var renderer: Renderer
+    @Inject lateinit var gameStateManager: GameStateManager
+    @Inject lateinit var buildModeManager: BuildModeManager
+    @Inject lateinit var flightModeManager: FlightModeManager
 
     private var screenWidth: Float = 0f
     private var screenHeight: Float = 0f
@@ -29,6 +32,7 @@ class FlightView @Inject constructor(
     private val projectileSpawnInterval = 1000L // 1 second interval
 
     private var destroyAllButton: Button? = null
+    private var pendingGameMode: GameState? = null // Store pending game mode if dimensions are not ready
 
     init {
         if (BuildConfig.DEBUG) Timber.d("FlightView initialized")
@@ -41,10 +45,17 @@ class FlightView @Inject constructor(
         gameEngine.screenWidth = screenWidth
         gameEngine.screenHeight = screenHeight
         if (BuildConfig.DEBUG) Timber.d("FlightView size changed: w=$w, h=$h")
+
+        // If a game mode was pending, apply it now that dimensions are available
+        pendingGameMode?.let { mode ->
+            setGameModeInternal(mode)
+            pendingGameMode = null
+        }
     }
 
     fun setStatusBarHeight(height: Float) {
         statusBarHeight = height
+        gameEngine.statusBarHeight = statusBarHeight
         if (BuildConfig.DEBUG) Timber.d("FlightView status bar height set to: $height")
     }
 
@@ -72,13 +83,20 @@ class FlightView @Inject constructor(
     }
 
     fun setGameMode(mode: GameState) {
+        if (screenWidth == 0f || screenHeight == 0f) {
+            // Defer setting the game mode until dimensions are available
+            pendingGameMode = mode
+            Timber.d("Deferring setGameMode to $mode until dimensions are available")
+            return
+        }
+        setGameModeInternal(mode)
+    }
+
+    private fun setGameModeInternal(mode: GameState) {
         if (mode == GameState.FLIGHT) {
             visibility = View.VISIBLE
             gameEngine.shipX = screenWidth / 2f
             gameEngine.shipY = screenHeight / 2f
-            gameEngine.onPowerUpCollectedListener = { x, y ->
-                renderer.particleSystem.addCollectionParticles(x, y)
-            }
             updateDestroyAllButton()
             startUpdateLoop()
             if (BuildConfig.DEBUG) Timber.d("FlightView activated, starting update loop")
@@ -91,24 +109,24 @@ class FlightView @Inject constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
-        if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) {
-            Timber.w("onDraw skipped: gameState=$gameState, visibility=$visibility")
+        if (gameStateManager.gameState != GameState.FLIGHT || visibility != View.VISIBLE) {
+            Timber.w("onDraw skipped: gameState=${gameStateManager.gameState}, visibility=$visibility")
             return
         }
         super.onDraw(canvas)
-        Timber.d("onDraw called, visibility=$visibility, gameState=$gameState")
+        Timber.d("onDraw called, visibility=$visibility, gameState=${gameStateManager.gameState}")
         renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
         renderer.drawShip(
             canvas,
             gameEngine,
-            emptyList(),
+            emptyList<Part>(),
             screenWidth,
             screenHeight,
             gameEngine.shipX,
             gameEngine.shipY,
-            gameState,
+            gameStateManager.gameState,
             gameEngine.mergedShipBitmap,
-            gameEngine.placeholders
+            buildModeManager.placeholders
         )
         renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
@@ -117,12 +135,12 @@ class FlightView @Inject constructor(
         renderer.drawBoss(canvas, gameEngine.getBoss(), statusBarHeight)
         renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
         renderer.drawHomingProjectiles(canvas, gameEngine.homingProjectiles, statusBarHeight)
-        renderer.drawStats(canvas, gameEngine, statusBarHeight, gameState)
+        renderer.drawStats(canvas, gameEngine, statusBarHeight, gameStateManager.gameState)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (gameState != GameState.FLIGHT || visibility != View.VISIBLE) return false
+        if (gameStateManager.gameState != GameState.FLIGHT || visibility != View.VISIBLE) return false
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -145,7 +163,8 @@ class FlightView @Inject constructor(
                 }
 
                 // Check for boss click
-                gameEngine.getBoss()?.let { boss ->
+                val boss = gameEngine.getBoss()
+                if (boss != null) {
                     val bossRect = RectF(
                         boss.x - 100f,
                         boss.y - 100f,
@@ -207,13 +226,13 @@ class FlightView @Inject constructor(
         updateRunnable?.let { removeCallbacks(it) }
         updateRunnable = object : Runnable {
             override fun run() {
-                if (gameState == GameState.FLIGHT && visibility == View.VISIBLE) {
+                if (gameStateManager.gameState == GameState.FLIGHT && visibility == View.VISIBLE) {
                     gameEngine.update(screenWidth, screenHeight, userId ?: "default")
                     invalidate()
-                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop: gameState=$gameState, invalidated")
+                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop: gameState=${gameStateManager.gameState}, invalidated")
                     postDelayed(this, 16)
                 } else {
-                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop skipped: gameState=$gameState")
+                    if (BuildConfig.DEBUG) Timber.d("FlightView update loop skipped: gameState=${gameStateManager.gameState}")
                 }
             }
         }
@@ -230,7 +249,4 @@ class FlightView @Inject constructor(
         stopUpdateLoop()
         if (BuildConfig.DEBUG) Timber.d("FlightView detached from window")
     }
-
-    private val gameState: GameState
-        get() = gameEngine.gameState
 }

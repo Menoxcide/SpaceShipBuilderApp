@@ -9,16 +9,16 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ImageButton
-import android.widget.TextView
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import android.widget.TextView
+import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
@@ -32,7 +32,6 @@ import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback
 import com.example.spaceshipbuilderapp.databinding.ActivityMainBinding
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
-import android.app.Dialog
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +57,10 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var highscoreManager: HighscoreManager
     @Inject lateinit var gameEngine: GameEngine
     @Inject lateinit var inputHandler: InputHandler
+    @Inject lateinit var gameStateManager: GameStateManager
+    @Inject lateinit var buildModeManager: BuildModeManager
+    @Inject lateinit var achievementManager: AchievementManager
+    @Inject lateinit var audioManager: AudioManager
 
     private val handler = Handler(Looper.getMainLooper())
     private val animationRunnable = object : Runnable {
@@ -71,7 +74,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val partTouchListener = View.OnTouchListener { view, event ->
-        if (gameState != GameState.BUILD) return@OnTouchListener false
+        if (gameStateManager.gameState != GameState.BUILD) return@OnTouchListener false
         val (partType, bitmap) = partButtons[view as ImageButton] ?: return@OnTouchListener false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -81,7 +84,7 @@ class MainActivity : AppCompatActivity() {
                 initialY = location[1].toFloat() + (view.height / 2f)
                 isDragging = true
                 draggedPartType = partType
-                binding.buildView.setSelectedPart(GameEngine.Part(partType, bitmap, initialX, initialY, 0f, 1f))
+                binding.buildView.setSelectedPart(Part(partType, bitmap, initialX, initialY, 0f, 1f))
                 if (BuildConfig.DEBUG) Timber.d("$partType selected at (x=$initialX, y=$initialY)")
                 true
             }
@@ -89,7 +92,7 @@ class MainActivity : AppCompatActivity() {
                 if (isDragging) {
                     val x = event.rawX
                     val y = event.rawY
-                    binding.buildView.setSelectedPart(GameEngine.Part(partType, bitmap, x, y, 0f, 1f))
+                    binding.buildView.setSelectedPart(Part(partType, bitmap, x, y, 0f, 1f))
                     if (BuildConfig.DEBUG) Timber.d("Dragging $partType to (x=$x, y=$y)")
                 }
                 true
@@ -99,21 +102,21 @@ class MainActivity : AppCompatActivity() {
                     isDragging = false
                     val x = event.rawX
                     val y = event.rawY
-                    val part = GameEngine.Part(partType, bitmap, x, y, 0f, 1f)
+                    val part = Part(partType, bitmap, x, y, 0f, 1f)
                     val targetPosition = inputHandler.getTargetPosition(partType)
                     if (targetPosition != null) {
                         val (targetX, targetY) = targetPosition
                         val distance = hypot(x - targetX, y - targetY)
                         if (distance < InputHandler.SNAP_RANGE && !inputHandler.checkOverlap(targetX, targetY, part)) {
-                            gameEngine.parts.removeAll { it.type == partType }
+                            buildModeManager.parts.removeAll { it.type == partType }
                             part.x = targetX
                             part.y = targetY
-                            part.scale = gameEngine.placeholders.find { it.type == partType }?.scale ?: 1f
-                            gameEngine.parts.add(part)
-                            if (BuildConfig.DEBUG) Timber.d("Snapped $partType to (x=${part.x}, y=${part.y}) with scale=${part.scale}, parts count: ${gameEngine.parts.size}")
-                            if (gameEngine.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
+                            part.scale = buildModeManager.placeholders.find { it.type == partType }?.scale ?: 1f
+                            buildModeManager.parts.add(part)
+                            if (BuildConfig.DEBUG) Timber.d("Snapped $partType to (x=${part.x}, y=${part.y}) with scale=${part.scale}, parts count: ${buildModeManager.parts.size}")
+                            if (buildModeManager.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
                                 val shipCenterX = gameEngine.screenWidth / 2f
-                                val shipCenterY = (gameEngine.cockpitY + gameEngine.engineY) / 2f
+                                val shipCenterY = (buildModeManager.cockpitY + buildModeManager.engineY) / 2f
                                 binding.buildView.renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
                                 Timber.d("Ship fully assembled and spaceworthy! Triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
                             }
@@ -123,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         if (BuildConfig.DEBUG) Timber.d("No target position found for $partType")
                     }
-                    gameEngine.selectedPart = null
+                    buildModeManager.selectedPart = null
                     draggedPartType = null
                     view.visibility = View.VISIBLE
                     view.performClick()
@@ -137,12 +140,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val placedPartTouchListener = View.OnTouchListener { view, event ->
-        if (gameState != GameState.BUILD) return@OnTouchListener false
-        val part = binding.buildView.gameEngine.parts.find { it.type == draggedPartType }
+        if (gameStateManager.gameState != GameState.BUILD) return@OnTouchListener false
+        val part = buildModeManager.parts.find { it.type == draggedPartType }
         if (part == null || !isDragging) return@OnTouchListener false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                binding.buildView.gameEngine.parts.remove(part)
+                buildModeManager.parts.remove(part)
                 binding.buildView.setSelectedPart(part)
                 if (BuildConfig.DEBUG) Timber.d("Picked up placed $draggedPartType at (x=${part.x}, y=${part.y})")
                 true
@@ -150,14 +153,14 @@ class MainActivity : AppCompatActivity() {
             MotionEvent.ACTION_MOVE -> {
                 val x = event.rawX
                 val y = event.rawY
-                binding.buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
+                binding.buildView.setSelectedPart(Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
                 if (BuildConfig.DEBUG) Timber.d("Dragging placed $draggedPartType to (x=$x, y=$y)")
                 true
             }
             MotionEvent.ACTION_UP -> {
                 val x = event.rawX
                 val y = event.rawY
-                binding.buildView.setSelectedPart(GameEngine.Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
+                binding.buildView.setSelectedPart(Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
                 isDragging = false
                 draggedPartType = null
                 view.performClick()
@@ -173,12 +176,12 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        if (BuildConfig.DEBUG) Timber.d("View layout initialized")
+        if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        Timber.d("View layout initialized")
 
         voiceHandler = VoiceCommandHandler(this) { /* Callback set later */ }
 
         binding.buildView.setOnTouchListener(placedPartTouchListener)
-        binding.launchButton.isVisible = false
         binding.playerNameInput.isVisible = false
 
         // Initialize AdMob SDK
@@ -193,39 +196,42 @@ class MainActivity : AppCompatActivity() {
         // Initialize the destroyAllButton synchronously to avoid uninitialized access
         binding.flightView.setDestroyAllButton(binding.destroyAllButton)
 
-        initializeGame()
-    }
-
-    private fun loadRewardedAd() {
-        val adRequest = AdRequest.Builder().build()
-        RewardedAd.load(this, adUnitId, adRequest, object : RewardedAdLoadCallback() {
-            override fun onAdLoaded(ad: RewardedAd) {
-                rewardedAd = ad
-                Timber.d("Rewarded ad loaded successfully")
-                rewardedAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
-                    override fun onAdDismissedFullScreenContent() {
-                        Timber.d("Rewarded ad dismissed")
-                        rewardedAd = null
-                        loadRewardedAd()
-                    }
-
-                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                        Timber.e("Rewarded ad failed to show: ${adError.message}")
-                        rewardedAd = null
-                        loadRewardedAd()
-                    }
-
-                    override fun onAdShowedFullScreenContent() {
-                        Timber.d("Rewarded ad shown")
-                    }
+        // Set up a listener to set screen dimensions as soon as the view is laid out
+        val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                val width = binding.flightView.width.toFloat()
+                val height = binding.flightView.height.toFloat()
+                if (width > 0f && height > 0f) {
+                    // Set dimensions in GameEngine
+                    gameEngine.setScreenDimensions(width, height)
+                    Timber.d("Set screen dimensions in MainActivity: width=$width, height=$height")
+                    // Remove the listener to avoid repeated calls
+                    binding.flightView.viewTreeObserver.removeOnGlobalLayoutListener(this)
                 }
             }
+        }
+        binding.flightView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
 
-            override fun onAdFailedToLoad(loadAdError: LoadAdError) {
-                Timber.e("Rewarded ad failed to load: ${loadAdError.message}")
-                rewardedAd = null
+        // Handle window insets for status bar height
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
+            binding.buildView.setStatusBarHeight(statusBarHeight)
+            binding.flightView.setStatusBarHeight(statusBarHeight)
+            binding.flightView.setUserId(userId ?: "default_user")
+            // Update dimensions with status bar height
+            val width = binding.flightView.width.toFloat()
+            val height = binding.flightView.height.toFloat()
+            if (width > 0f && height > 0f) {
+                gameEngine.setScreenDimensions(width, height, statusBarHeight)
             }
-        })
+            binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
+            buildModeManager.parts.clear()
+            Timber.d("Initialized with no parts after insets: cockpitY=${buildModeManager.cockpitY}, fuelTankY=${buildModeManager.fuelTankY}, engineY=${buildModeManager.engineY}")
+            setLaunchButtonVisibility(false)
+            WindowInsetsCompat.CONSUMED
+        }
+
+        initializeGame()
     }
 
     private fun initializeGame() {
@@ -264,33 +270,7 @@ class MainActivity : AppCompatActivity() {
                 setupShipSpinner()
             }
 
-            val screenWidth = resources.displayMetrics.widthPixels.toFloat()
-            val screenHeight = resources.displayMetrics.heightPixels.toFloat()
-            gameEngine.setScreenDimensions(screenWidth, screenHeight)
-
-            ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
-                val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
-                binding.buildView.setStatusBarHeight(statusBarHeight)
-                binding.flightView.setStatusBarHeight(statusBarHeight)
-                binding.flightView.setUserId(userId!!)
-                gameEngine.setScreenDimensions(screenWidth, screenHeight, statusBarHeight)
-                binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
-                gameEngine.initializePlaceholders(
-                    screenWidth,
-                    screenHeight,
-                    binding.buildView.renderer.cockpitPlaceholderBitmap,
-                    binding.buildView.renderer.fuelTankPlaceholderBitmap,
-                    binding.buildView.renderer.enginePlaceholderBitmap,
-                    statusBarHeight
-                )
-                gameEngine.parts.clear()
-                Timber.d("Initialized with no parts after insets: cockpitY=${gameEngine.cockpitY}, fuelTankY=${gameEngine.fuelTankY}, engineY=${gameEngine.engineY}")
-                setLaunchButtonVisibility(false)
-                WindowInsetsCompat.CONSUMED
-            }
-
             gameEngine.setLaunchListener { isLaunching ->
-                setGameMode(if (isLaunching) GameState.FLIGHT else GameState.BUILD)
                 binding.selectionPanel.isVisible = !isLaunching
                 binding.buildView.isVisible = !isLaunching
                 binding.buildView.isEnabled = !isLaunching
@@ -299,6 +279,7 @@ class MainActivity : AppCompatActivity() {
                 binding.playerNameInput.isVisible = false
                 binding.leaderboardButton.isVisible = !isLaunching
                 binding.shopButton.isVisible = !isLaunching
+                binding.achievementsButton.isVisible = !isLaunching
                 if (isLaunching) {
                     binding.flightView.requestFocus()
                     binding.flightView.setGameMode(GameState.FLIGHT)
@@ -308,23 +289,15 @@ class MainActivity : AppCompatActivity() {
                     binding.buildView.setOnTouchListener(placedPartTouchListener)
                     binding.flightView.setGameMode(GameState.BUILD)
                     binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
-                    gameEngine.initializePlaceholders(
-                        gameEngine.screenWidth,
-                        gameEngine.screenHeight,
-                        binding.buildView.renderer.cockpitPlaceholderBitmap,
-                        binding.buildView.renderer.fuelTankPlaceholderBitmap,
-                        binding.buildView.renderer.enginePlaceholderBitmap,
-                        gameEngine.statusBarHeight
-                    )
                     if (BuildConfig.DEBUG) Timber.d("BuildView focused: ${binding.buildView.isFocused}")
                     setupShipSpinner()
                 }
-                val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && gameEngine.parts.size == 3 && !isLaunching
+                val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && buildModeManager.parts.size == 3 && !isLaunching
                 setLaunchButtonVisibility(isLaunchReady)
                 if (BuildConfig.DEBUG) {
-                    Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${gameEngine.parts.size}, isLaunching=$isLaunching")
+                    Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${buildModeManager.parts.size}, isLaunching=$isLaunching")
                     if (!isLaunchReady) {
-                        Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason()}")
+                        Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight)}")
                     }
                 }
             }
@@ -337,6 +310,38 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun loadRewardedAd() {
+        val adRequest = AdRequest.Builder().build()
+        RewardedAd.load(this, adUnitId, adRequest, object : RewardedAdLoadCallback() {
+            override fun onAdLoaded(ad: RewardedAd) {
+                rewardedAd = ad
+                Timber.d("Rewarded ad loaded successfully")
+                rewardedAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    override fun onAdDismissedFullScreenContent() {
+                        Timber.d("Rewarded ad dismissed")
+                        rewardedAd = null
+                        loadRewardedAd()
+                    }
+
+                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        Timber.e("Rewarded ad failed to show: ${adError.message}")
+                        rewardedAd = null
+                        loadRewardedAd()
+                    }
+
+                    override fun onAdShowedFullScreenContent() {
+                        Timber.d("Rewarded ad shown")
+                    }
+                }
+            }
+
+            override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                Timber.e("Rewarded ad failed to load: ${loadAdError.message}")
+                rewardedAd = null
+            }
+        })
     }
 
     private fun setupShipSpinner() {
@@ -374,14 +379,6 @@ class MainActivity : AppCompatActivity() {
                     binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
                     binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
                     binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
-                    gameEngine.initializePlaceholders(
-                        gameEngine.screenWidth,
-                        gameEngine.screenHeight,
-                        binding.buildView.renderer.cockpitPlaceholderBitmap,
-                        binding.buildView.renderer.fuelTankPlaceholderBitmap,
-                        binding.buildView.renderer.enginePlaceholderBitmap,
-                        gameEngine.statusBarHeight
-                    )
                     binding.buildView.invalidate()
                 } else {
                     binding.shipSpinner.setSelection(gameEngine.selectedShipSet)
@@ -397,7 +394,7 @@ class MainActivity : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>) {}
         }
 
-        binding.shipSpinner.isEnabled = gameState == GameState.BUILD
+        binding.shipSpinner.isEnabled = gameStateManager.gameState == GameState.BUILD
     }
 
     private fun showContinueDialog(
@@ -407,7 +404,7 @@ class MainActivity : AppCompatActivity() {
         onContinueWithRevive: () -> Unit,
         onReturnToBuild: () -> Unit
     ) {
-        val dialog = Dialog(this)
+        val dialog = android.app.Dialog(this)
         dialog.setContentView(R.layout.dialog_continue)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
@@ -479,19 +476,29 @@ class MainActivity : AppCompatActivity() {
             if (BuildConfig.DEBUG) Timber.d("Launch button clicked")
             val success = binding.buildView.launchShip()
             if (!success) {
-                showToast(binding.buildView.gameEngine.getSpaceworthinessFailureReason(), Toast.LENGTH_LONG)
+                showToast(binding.buildView.gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight), Toast.LENGTH_LONG)
             }
         }
 
         binding.leaderboardButton.setOnClickListener {
             if (BuildConfig.DEBUG) Timber.d("Leaderboard button clicked")
-            showLeaderboard()
+            val intent = Intent(this, LeaderboardActivity::class.java)
+            startActivity(intent)
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
         binding.shopButton.setOnClickListener {
             if (BuildConfig.DEBUG) Timber.d("Galactic Shop button clicked")
             val intent = Intent(this, GalacticShopActivity::class.java)
             startActivity(intent)
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+        }
+
+        binding.achievementsButton.setOnClickListener {
+            if (BuildConfig.DEBUG) Timber.d("Achievements button clicked")
+            val intent = Intent(this, AchievementsActivity::class.java)
+            startActivity(intent)
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
         partButtons.forEach { (button, _) ->
@@ -503,63 +510,33 @@ class MainActivity : AppCompatActivity() {
 
     fun setLaunchButtonVisibility(isVisible: Boolean) {
         binding.launchButton.isVisible = isVisible
-        if (BuildConfig.DEBUG) Timber.d("Launch button visibility explicitly set to $isVisible")
-    }
+        if (BuildConfig.DEBUG) Timber.d("Launch button visibility set to $isVisible")
 
-    fun showLeaderboard() {
-        val dialog = Dialog(this)
-        dialog.setContentView(R.layout.dialog_leaderboard)
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        if (isVisible) {
+            // Position the launch button on the fuel tank
+            binding.launchButton.post {
+                // Get the fuel tank's Y position from BuildModeManager
+                val fuelTankY: Float = buildModeManager.fuelTankY
+                val screenWidth: Float = gameEngine.screenWidth
 
-        val highscoreText = dialog.findViewById<TextView>(R.id.highscoreText)
-        val closeButton = dialog.findViewById<Button>(R.id.closeButton)
-        val prevButton = dialog.findViewById<Button>(R.id.prevButton) ?: Button(this).apply {
-            id = R.id.prevButton
-            text = getString(R.string.prev_button)
-            dialog.findViewById<android.widget.LinearLayout>(android.R.id.content)?.addView(this)
-        }
-        val nextButton = dialog.findViewById<Button>(R.id.nextButton) ?: Button(this).apply {
-            id = R.id.nextButton
-            text = getString(R.string.next_button)
-            dialog.findViewById<android.widget.LinearLayout>(android.R.id.content)?.addView(this)
-        }
+                // Center the button horizontally
+                val buttonWidth: Float = binding.launchButton.width.toFloat()
+                val widthDifference: Float = screenWidth - buttonWidth
+                val buttonX: Float = widthDifference / 2.0f
 
-        var currentPage = 0
-        val pageSize = 10
-        var totalPages = highscoreManager.getTotalPages(pageSize)
+                // Set the Y position to the fuel tank's Y coordinate
+                // Adjust for the button's height to center it vertically on the fuel tank
+                val buttonHeight: Float = binding.launchButton.height.toFloat()
+                val halfButtonHeight: Float = buttonHeight / 2.0f
+                val buttonY: Float = fuelTankY - halfButtonHeight
 
-        fun updateLeaderboardText() {
-            val scores = highscoreManager.getHighscores(currentPage, pageSize)
-            val sb = StringBuilder(getString(R.string.leaderboard_title, currentPage + 1, totalPages))
-            scores.forEachIndexed { index, entry ->
-                sb.append("${currentPage * pageSize + index + 1}. ${entry.name}: ${getString(R.string.score_entry, entry.score, entry.level, entry.distance.toInt())}\n")
-            }
-            highscoreText.text = sb.toString()
-            prevButton.isEnabled = currentPage > 0
-            nextButton.isEnabled = currentPage < totalPages - 1
-        }
+                // Apply the position
+                binding.launchButton.x = buttonX
+                binding.launchButton.y = buttonY
 
-        updateLeaderboardText()
-
-        prevButton.setOnClickListener {
-            if (currentPage > 0) {
-                currentPage--
-                updateLeaderboardText()
+                Timber.d("Positioned launch button at (x=$buttonX, y=$buttonY) on fuel tank (fuelTankY=$fuelTankY)")
             }
         }
-
-        nextButton.setOnClickListener {
-            if (currentPage < totalPages - 1) {
-                currentPage++
-                updateLeaderboardText()
-            }
-        }
-
-        closeButton.setOnClickListener {
-            dialog.dismiss()
-        }
-
-        dialog.show()
     }
 
     override fun onDestroy() {
@@ -567,22 +544,7 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(animationRunnable)
         gameEngine.onDestroy()
         voiceHandler.stopListening()
+        audioManager.onDestroy()
         if (BuildConfig.DEBUG) Timber.d("Activity destroyed")
     }
-
-    private fun setGameMode(mode: GameState) {
-        gameEngine.gameState = mode
-        if (mode == GameState.FLIGHT) {
-            binding.flightView.setGameMode(GameState.FLIGHT)
-            binding.flightView.postInvalidate()
-            Timber.d("Set game mode to FLIGHT, flightView visibility=${binding.flightView.isVisible}")
-        } else {
-            binding.flightView.setGameMode(GameState.BUILD)
-            binding.buildView.invalidate()
-            Timber.d("Set game mode to BUILD, flightView visibility=${binding.flightView.isVisible}")
-        }
-    }
-
-    private val gameState: GameState
-        get() = gameEngine.gameState
 }
