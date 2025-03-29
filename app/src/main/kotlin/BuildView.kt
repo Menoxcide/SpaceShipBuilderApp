@@ -19,7 +19,7 @@ class BuildView @Inject constructor(
     @Inject lateinit var renderer: Renderer
     @Inject lateinit var inputHandler: InputHandler
     @Inject lateinit var gameStateManager: GameStateManager
-    @Inject lateinit var buildModeManager: BuildModeManager // Inject BuildModeManager
+    @Inject lateinit var buildModeManager: BuildModeManager
 
     private var screenWidth: Float = 0f
     private var screenHeight: Float = 0f
@@ -30,6 +30,7 @@ class BuildView @Inject constructor(
     private var lastParticleTriggerTime = 0L
     private var isLaunchButtonVisible = false
     private var isSpaceworthy = false
+    private var shouldRedraw = false // Flag to control redraws
 
     init {
         if (BuildConfig.DEBUG) Timber.d("BuildView initialized")
@@ -68,6 +69,7 @@ class BuildView @Inject constructor(
     override fun onDraw(canvas: Canvas) {
         if (gameStateManager.gameState != GameState.BUILD || !isVisible) {
             Timber.w("onDraw skipped: gameState=${gameStateManager.gameState}, visibility=$isVisible")
+            shouldRedraw = false
             return
         }
         super.onDraw(canvas)
@@ -78,8 +80,6 @@ class BuildView @Inject constructor(
         renderer.drawPlaceholders(canvas, buildModeManager.placeholders)
         renderer.drawParts(canvas, buildModeManager.parts)
         buildModeManager.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
-        renderer.drawStats(canvas, gameEngine, statusBarHeight, gameStateManager.gameState)
-        // Draw ship after background to ensure stars are behind
         renderer.drawShip(
             canvas,
             gameEngine,
@@ -125,6 +125,14 @@ class BuildView @Inject constructor(
         }
 
         Timber.d("Rendered frame in BuildView with parts count: ${buildModeManager.parts.size}, parts: ${buildModeManager.parts.map { "${it.type} at y=${it.y}" }}")
+        shouldRedraw = false // Reset the redraw flag after drawing
+    }
+
+    override fun invalidate() {
+        if (!shouldRedraw) {
+            shouldRedraw = true
+            super.invalidate()
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

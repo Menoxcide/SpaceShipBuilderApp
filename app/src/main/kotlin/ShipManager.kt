@@ -7,7 +7,9 @@ import javax.inject.Inject
 import kotlin.math.cos
 import kotlin.math.sin
 
-class ShipManager @Inject constructor() {
+class ShipManager @Inject constructor(
+    private val skillManager: SkillManager
+) {
     var shipX: Float = 0f
     var shipY: Float = 0f
     var totalShipHeight: Float = 0f
@@ -18,20 +20,33 @@ class ShipManager @Inject constructor() {
     var fuelCapacity = 100f
     var hp = 100f
     var maxHp = 100f
-        get() = when (selectedShipSet) {
-            0 -> 100f // Base HP for Ship Set 1
-            1 -> 150f // +50 HP for Ship Set 2
-            2 -> 200f // +50 HP for Ship Set 3
-            else -> 100f
+        get() {
+            val baseHp = when (selectedShipSet) {
+                0 -> 100f
+                1 -> 150f
+                2 -> 200f
+                else -> 100f
+            }
+            return baseHp * (1 + (skillManager.skills["max_hp"] ?: 0) * 0.10f) // +10% per level
         }
 
     var missileCount = 3
+        get() {
+            // Ensure missileCount doesn't exceed maxMissiles
+            return field.coerceAtMost(maxMissiles)
+        }
+        set(value) {
+            field = value.coerceIn(0, maxMissiles)
+        }
     var maxMissiles = 3
-        get() = when (selectedShipSet) {
-            0 -> 3 // Base for Ship Set 1
-            1 -> 4 // +1 for Ship Set 2
-            2 -> 5 // +1 for Ship Set 3
-            else -> 3
+        get() {
+            val baseMissiles = when (selectedShipSet) {
+                0 -> 3
+                1 -> 4
+                2 -> 5
+                else -> 3
+            }
+            return baseMissiles + (skillManager.skills["homing_missiles"] ?: 0) // +1 per level
         }
 
     var shipColor: String = "default"
@@ -45,7 +60,7 @@ class ShipManager @Inject constructor() {
                 Timber.w("Cannot select ship set $value, not unlocked yet")
             }
         }
-    private val unlockedShipSets = mutableSetOf(0) // Default ship set is always unlocked
+    private val unlockedShipSets = mutableSetOf(0)
 
     var baseFuelConsumption = 0.05f
     var currentFuelConsumption = baseFuelConsumption
@@ -59,12 +74,12 @@ class ShipManager @Inject constructor() {
 
     var reviveCount: Int = 0
         set(value) {
-            field = value.coerceIn(0, 3) // Cap at 3
+            field = value.coerceIn(0, 3)
         }
 
     var destroyAllCharges: Int = 0
         set(value) {
-            field = value.coerceIn(0, 3) // Cap at 3
+            field = value.coerceIn(0, 3)
         }
 
     fun updateUnlockedShipSets(highestLevel: Int, starsCollected: Int) {
@@ -95,25 +110,22 @@ class ShipManager @Inject constructor() {
     fun getUnlockedShipSets(): Set<Int> = unlockedShipSets.toSet()
 
     fun applyShipColorEffects() {
-        currentFuelConsumption = baseFuelConsumption
-        currentSpeed = baseSpeed
+        currentFuelConsumption = baseFuelConsumption * (1 - (skillManager.skills["fuel_efficiency"] ?: 0) * 0.05f) // -5% per level
+        currentSpeed = baseSpeed * (1 + (skillManager.skills["speed_boost"] ?: 0) * 0.05f) // +5% per level
         when (shipColor) {
-            "red" -> currentSpeed = baseSpeed * 1.5f
-            "blue" -> {
-                // Shield effect is now managed by PowerUpManager
-                currentFuelConsumption = baseFuelConsumption * 0.5f
-            }
-            "green" -> currentFuelConsumption = baseFuelConsumption * 0.5f
+            "red" -> currentSpeed *= 1.5f
+            "blue" -> currentFuelConsumption *= 0.5f
+            "green" -> currentFuelConsumption *= 0.5f
         }
         Timber.d("Applied ship color effects: speed=$currentSpeed, fuelConsumption=$currentFuelConsumption")
     }
 
-    private fun applyShipSetCharacteristics() {
-        baseSpeed = 5f
+    fun applyShipSetCharacteristics() {
+        baseSpeed = 5f * (1 + (skillManager.skills["speed_boost"] ?: 0) * 0.05f) // +5% per level
         currentSpeed = baseSpeed
-        baseProjectileSpeed = 10f
+        baseProjectileSpeed = 10f * (1 + (skillManager.skills["projectile_damage"] ?: 0) * 0.10f) // +10% per level
         currentProjectileSpeed = baseProjectileSpeed
-        missileCount = maxMissiles
+        missileCount = maxMissiles // Reset missile count to max on ship set change
         hp = maxHp
         fuel = fuelCapacity
 
@@ -137,7 +149,6 @@ class ShipManager @Inject constructor() {
     fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>) {
         fuel = 50f
         hp = maxHp
-        // Only set position if screen dimensions are valid
         if (screenWidth > 0f && screenHeight > 0f) {
             shipX = screenWidth / 2f
             shipY = screenHeight / 2f
@@ -200,11 +211,9 @@ class ShipManager @Inject constructor() {
         mergedShipBitmap = null
     }
 
-    // Properties for missile recharge timing (used by FlightModeManager)
     var lastMissileRechargeTime = System.currentTimeMillis()
-    val missileRechargeTime = 10000L // 10 seconds per missile recharge
+    val missileRechargeTime = 10000L
 
-    // Properties for level and stars (used by FlightModeManager for ship set unlocking)
     var level = 1
     var highestLevel = 1
     var starsCollected = 0

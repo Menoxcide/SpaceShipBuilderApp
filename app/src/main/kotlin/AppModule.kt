@@ -43,7 +43,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideShipManager(): ShipManager = ShipManager()
+    fun provideSkillManager(): SkillManager = SkillManager()
+
+    @Provides
+    @Singleton
+    fun provideShipManager(skillManager: SkillManager): ShipManager = ShipManager(skillManager)
 
     @Provides
     @Singleton
@@ -95,7 +99,8 @@ object AppModule {
         gameStateManager: GameStateManager,
         buildModeManager: BuildModeManager,
         flightModeManager: FlightModeManager,
-        achievementManager: AchievementManager
+        achievementManager: AchievementManager,
+        skillManager: SkillManager
     ): GameEngine = GameEngine(
         context,
         renderer,
@@ -103,7 +108,8 @@ object AppModule {
         gameStateManager,
         buildModeManager,
         flightModeManager,
-        achievementManager
+        achievementManager,
+        skillManager
     )
 
     @Provides

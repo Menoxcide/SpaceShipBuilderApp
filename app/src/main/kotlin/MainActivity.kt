@@ -67,8 +67,12 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             binding.buildView.renderer.updateAnimationFrame()
             binding.flightView.renderer.updateAnimationFrame()
-            if (binding.buildView.isVisible) binding.buildView.invalidate()
-            if (binding.flightView.isVisible) binding.flightView.invalidate()
+            if (binding.buildView.isVisible && gameStateManager.gameState == GameState.BUILD) {
+                binding.buildView.invalidate()
+            }
+            if (binding.flightView.isVisible && gameStateManager.gameState == GameState.FLIGHT) {
+                binding.flightView.invalidate()
+            }
             handler.postDelayed(this, 16)
         }
     }
@@ -277,9 +281,7 @@ class MainActivity : AppCompatActivity() {
                 binding.flightView.isVisible = isLaunching
                 binding.flightView.isEnabled = isLaunching
                 binding.playerNameInput.isVisible = false
-                binding.leaderboardButton.isVisible = !isLaunching
-                binding.shopButton.isVisible = !isLaunching
-                binding.achievementsButton.isVisible = !isLaunching
+                binding.navigationButtons.isVisible = !isLaunching // Control visibility of all navigation buttons
                 if (isLaunching) {
                     binding.flightView.requestFocus()
                     binding.flightView.setGameMode(GameState.FLIGHT)
@@ -497,6 +499,13 @@ class MainActivity : AppCompatActivity() {
         binding.achievementsButton.setOnClickListener {
             if (BuildConfig.DEBUG) Timber.d("Achievements button clicked")
             val intent = Intent(this, AchievementsActivity::class.java)
+            startActivity(intent)
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+        }
+
+        binding.skillTreeButton.setOnClickListener {
+            if (BuildConfig.DEBUG) Timber.d("Skill Tree button clicked")
+            val intent = Intent(this, SkillTreeActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }

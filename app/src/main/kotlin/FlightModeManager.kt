@@ -62,7 +62,7 @@ class FlightModeManager @Inject constructor(
         onStarsCollectedChange: (Int) -> Unit,
         onDistanceTraveledChange: (Float) -> Unit,
         onLongestDistanceTraveledChange: (Float) -> Unit,
-        onBossDefeatedChange: () -> Unit // New callback for boss defeats
+        onBossDefeatedChange: () -> Unit
     ) {
         if (gameStateManager.gameState != GameState.FLIGHT) {
             Timber.d("FlightModeManager update skipped: gameState=${gameStateManager.gameState}")
@@ -97,7 +97,7 @@ class FlightModeManager @Inject constructor(
                 shipManager.level++
                 onLevelChange(shipManager.level)
                 levelUpAnimationStartTime = currentTime
-                onBossDefeatedChange() // Increment bossesDefeated in GameEngine
+                onBossDefeatedChange()
                 if (shipManager.level > shipManager.highestLevel) {
                     shipManager.highestLevel = shipManager.level
                     onHighestLevelChange(shipManager.highestLevel)
@@ -215,7 +215,7 @@ class FlightModeManager @Inject constructor(
                     shipManager.screenWidth,
                     shipManager.screenHeight,
                     ::resetFlightData,
-                    { _ -> }, // No-op for savePersistentData
+                    { _ -> },
                     userId
                 )
                 gameStateManager.notifyGameOver(

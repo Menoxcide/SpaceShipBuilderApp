@@ -471,12 +471,14 @@ class Renderer @Inject constructor(
                 canvas.drawBitmap(it, spriteX, spriteY, powerUpPaint)
             }
 
+            // Draw dynamic missile indicator based on total missile count
+            val totalMissiles = gameEngine.missileCount
             val indicatorSize = 10f
             val indicatorSpacing = 5f
-            val totalWidth = (indicatorSize * 3) + (indicatorSpacing * 2)
+            val totalWidth = (indicatorSize + indicatorSpacing) * totalMissiles - indicatorSpacing
             val indicatorXStart = shipX - totalWidth / 2f
             val indicatorY = y - 20f
-            for (i in 0 until 3) {
+            for (i in 0 until totalMissiles) {
                 missileIndicatorPaint.alpha = if (i < gameEngine.missileCount) 255 else 50
                 canvas.drawCircle(
                     indicatorXStart + i * (indicatorSize + indicatorSpacing) + indicatorSize / 2f,

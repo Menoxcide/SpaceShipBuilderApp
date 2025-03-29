@@ -16,7 +16,8 @@ class GameEngine @Inject constructor(
     private val gameStateManager: GameStateManager,
     private val buildModeManager: BuildModeManager,
     private val flightModeManager: FlightModeManager,
-    private val achievementManager: AchievementManager
+    private val achievementManager: AchievementManager,
+    private val skillManager: SkillManager // New dependency
 ) {
     private val db = FirebaseFirestore.getInstance()
 
@@ -294,8 +295,11 @@ class GameEngine @Inject constructor(
                 destroyAllCharges = doc.getLong("destroyAllCharges")?.toInt() ?: 0
                 missilesLaunched = doc.getLong("missilesLaunched")?.toInt() ?: 0
                 bossesDefeated = doc.getLong("bossesDefeated")?.toInt() ?: 0
+                skillManager.skillPoints = doc.getLong("skillPoints")?.toInt() ?: 0
+                val loadedSkills = doc.get("skills") as? Map<String, Long> ?: emptyMap()
+                loadedSkills.forEach { (key, value) -> skillManager.skills[key] = value.toInt() }
                 updateUnlockedShipSets()
-                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated")
+                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, skills=${skillManager.skills}")
             } else {
                 Timber.d("User data not found for $userId, initializing with defaults")
                 val userData = hashMapOf(
@@ -310,7 +314,9 @@ class GameEngine @Inject constructor(
                     "reviveCount" to 0,
                     "destroyAllCharges" to 0,
                     "missilesLaunched" to 0,
-                    "bossesDefeated" to 0
+                    "bossesDefeated" to 0,
+                    "skillPoints" to 0,
+                    "skills" to skillManager.skills
                 )
                 db.collection("users").document(userId).set(userData).await()
                 level = 1
@@ -325,6 +331,13 @@ class GameEngine @Inject constructor(
                 destroyAllCharges = 0
                 missilesLaunched = 0
                 bossesDefeated = 0
+                skillManager.skillPoints = 0
+                skillManager.skills.clear()
+                skillManager.skills.putAll(mapOf(
+                    "projectile_damage" to 0, "firing_rate" to 0, "homing_missiles" to 0,
+                    "speed_boost" to 0, "fuel_efficiency" to 0, "power_up_duration" to 0,
+                    "max_hp" to 0, "hp_regeneration" to 0, "shield_strength" to 0
+                ))
                 updateUnlockedShipSets()
                 Timber.d("Initialized new user data for $userId")
             }
@@ -343,6 +356,13 @@ class GameEngine @Inject constructor(
             destroyAllCharges = 0
             missilesLaunched = 0
             bossesDefeated = 0
+            skillManager.skillPoints = 0
+            skillManager.skills.clear()
+            skillManager.skills.putAll(mapOf(
+                "projectile_damage" to 0, "firing_rate" to 0, "homing_missiles" to 0,
+                "speed_boost" to 0, "fuel_efficiency" to 0, "power_up_duration" to 0,
+                "max_hp" to 0, "hp_regeneration" to 0, "shield_strength" to 0
+            ))
             updateUnlockedShipSets()
             Timber.w("Using default user data due to Firestore error")
         }
@@ -384,18 +404,21 @@ class GameEngine @Inject constructor(
         }
         flightModeManager.update(
             userId,
-            onLevelChange = { newLevel -> level = newLevel },
+            onLevelChange = { newLevel ->
+                level = newLevel
+                skillManager.skillPoints++ // Award 1 skill point per level up
+            },
             onHighestLevelChange = { newHighestLevel -> highestLevel = newHighestLevel },
             onHighestScoreChange = { newHighestScore -> highestScore = newHighestScore },
             onStarsCollectedChange = { newStarsCollected -> starsCollected = newStarsCollected },
             onDistanceTraveledChange = { newDistanceTraveled -> distanceTraveled = newDistanceTraveled },
             onLongestDistanceTraveledChange = { newLongestDistanceTraveled -> longestDistanceTraveled = newLongestDistanceTraveled },
-            onBossDefeatedChange = { bossesDefeated++ } // Increment bossesDefeated when a boss is defeated
+            onBossDefeatedChange = { bossesDefeated++ }
         )
         val newAchievements = achievementManager.checkAchievements(level, distanceTraveled, currentScore, starsCollected, missilesLaunched, bossesDefeated)
         if (newAchievements.isNotEmpty()) {
             newAchievements.forEach { achievement ->
-                starsCollected += achievementManager.getRewardStars(achievement) // Add reward stars
+                starsCollected += achievementManager.getRewardStars(achievement)
                 renderer.showUnlockMessage(listOf(achievement.name))
             }
         }
@@ -421,7 +444,7 @@ class GameEngine @Inject constructor(
             val newAchievements = achievementManager.checkAchievements(level, distanceTraveled, currentScore, starsCollected, missilesLaunched, bossesDefeated)
             if (newAchievements.isNotEmpty()) {
                 newAchievements.forEach { achievement ->
-                    starsCollected += achievementManager.getRewardStars(achievement) // Add reward stars
+                    starsCollected += achievementManager.getRewardStars(achievement)
                     renderer.showUnlockMessage(listOf(achievement.name))
                 }
             }
@@ -439,7 +462,7 @@ class GameEngine @Inject constructor(
 
     fun launchHomingMissile(target: Any) {
         flightModeManager.launchHomingMissile(target)
-        missilesLaunched++ // Increment missiles launched
+        missilesLaunched++
         Timber.d("Homing missile launched, total: $missilesLaunched")
     }
 
@@ -471,6 +494,10 @@ class GameEngine @Inject constructor(
         buildModeManager.rotatePart(partType)
     }
 
+    fun upgradeSkill(skillId: String): Boolean {
+        return skillManager.upgradeSkill(skillId)
+    }
+
     private fun savePersistentData(userId: String) {
         val userData = hashMapOf(
             "level" to level,
@@ -484,7 +511,9 @@ class GameEngine @Inject constructor(
             "reviveCount" to reviveCount,
             "destroyAllCharges" to destroyAllCharges,
             "missilesLaunched" to missilesLaunched,
-            "bossesDefeated" to bossesDefeated
+            "bossesDefeated" to bossesDefeated,
+            "skillPoints" to skillManager.skillPoints,
+            "skills" to skillManager.skills
         )
         db.collection("users").document(userId).set(userData)
             .addOnSuccessListener { Timber.d("Saved user data for $userId") }
