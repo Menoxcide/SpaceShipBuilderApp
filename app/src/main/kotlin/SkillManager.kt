@@ -42,4 +42,15 @@ class SkillManager @Inject constructor() {
         }
         return false
     }
+
+    fun buySkillPoint(experience: Long): Boolean {
+        val skillPointCost = 20000L // 20,000 XP per skill point
+        if (experience >= skillPointCost) {
+            skillPoints++
+            Timber.d("Bought skill point, new total: $skillPoints")
+            return true
+        }
+        Timber.d("Not enough experience to buy skill point: $experience < $skillPointCost")
+        return false
+    }
 }

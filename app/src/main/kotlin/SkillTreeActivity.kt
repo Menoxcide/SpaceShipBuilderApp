@@ -15,7 +15,10 @@ import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
 import android.graphics.Color
-import android.view.View.OnLongClickListener
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @AndroidEntryPoint
 class SkillTreeActivity : AppCompatActivity() {
@@ -25,6 +28,8 @@ class SkillTreeActivity : AppCompatActivity() {
 
     private lateinit var entriesContainer: LinearLayout
     private lateinit var skillPointsText: TextView
+    private lateinit var experienceText: TextView
+    private lateinit var buySkillPointButton: Button
     private lateinit var bonusesText: TextView
     private val skillViews = mutableMapOf<String, SkillViewHolder>()
 
@@ -40,11 +45,40 @@ class SkillTreeActivity : AppCompatActivity() {
 
         entriesContainer = findViewById(R.id.skillTreeEntries)
         skillPointsText = findViewById(R.id.skillPointsText)
+        experienceText = findViewById(R.id.experienceText)
+        buySkillPointButton = findViewById(R.id.buySkillPointButton)
         bonusesText = findViewById(R.id.bonusesText)
+
+        // Fetch latest experience from Firebase
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                gameEngine.loadUserData(gameEngine.getUserId())
+                updateExperienceDisplay()
+                Timber.d("Experience refreshed from Firebase: ${gameEngine.experience}")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to refresh experience: ${e.message}")
+                Toast.makeText(this@SkillTreeActivity, "Failed to load experience", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         populateSkillTree()
         updateSkillPointsDisplay()
         updateBonusesDisplay()
+
+        buySkillPointButton.setOnClickListener {
+            if (skillManager.buySkillPoint(gameEngine.experience)) {
+                gameEngine.experience -= 20000L
+                updateSkillPointsDisplay()
+                updateExperienceDisplay()
+                audioManager.playPowerUpSound()
+                Toast.makeText(this, "Skill Point Purchased!", Toast.LENGTH_SHORT).show()
+                CoroutineScope(Dispatchers.Main).launch {
+                    gameEngine.savePersistentData(gameEngine.getUserId())
+                }
+            } else {
+                Toast.makeText(this, "Not enough experience! Need 20,000 XP.", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         findViewById<Button>(R.id.backButton).setOnClickListener {
             finish()
@@ -59,12 +93,15 @@ class SkillTreeActivity : AppCompatActivity() {
         skillPointsText.text = "Skill Points: ${skillManager.skillPoints}"
     }
 
+    private fun updateExperienceDisplay() {
+        experienceText.text = "Experience: ${gameEngine.experience}"
+    }
+
     private fun updateBonusesDisplay() {
         val bonuses = mutableListOf<String>()
         val skills = skillManager.skills
         val maxLevels = skillManager.skillMaxLevels
 
-        // Combat Bonuses
         val projectileDamageLevel = skills["projectile_damage"] ?: 0
         if (projectileDamageLevel > 0) {
             val bonus = projectileDamageLevel * 10
@@ -82,7 +119,6 @@ class SkillTreeActivity : AppCompatActivity() {
             bonuses.add("Homing Missiles: +$homingMissilesLevel")
         }
 
-        // Engineering Bonuses
         val maxHpLevel = skills["max_hp"] ?: 0
         if (maxHpLevel > 0) {
             val bonus = maxHpLevel * 10
@@ -100,7 +136,6 @@ class SkillTreeActivity : AppCompatActivity() {
             bonuses.add("Shield Strength: +$bonus%")
         }
 
-        // Exploration Bonuses
         val speedBoostLevel = skills["speed_boost"] ?: 0
         if (speedBoostLevel > 0) {
             val bonus = speedBoostLevel * 5
@@ -119,16 +154,12 @@ class SkillTreeActivity : AppCompatActivity() {
             bonuses.add("Power-Up Duration: +$bonus%")
         }
 
-        bonusesText.text = if (bonuses.isEmpty()) {
-            "No Bonuses Unlocked"
-        } else {
-            "Current Bonuses:\n${bonuses.joinToString("\n")}"
-        }
+        bonusesText.text = if (bonuses.isEmpty()) "No Bonuses Unlocked" else "Current Bonuses:\n${bonuses.joinToString("\n")}"
     }
 
     private fun populateSkillTree() {
-        entriesContainer.removeAllViews() // Clear existing views
-        skillViews.clear() // Clear previous view references
+        entriesContainer.removeAllViews()
+        skillViews.clear()
 
         val categories = mapOf(
             "Combat" to listOf("projectile_damage", "firing_rate", "homing_missiles"),
@@ -148,20 +179,7 @@ class SkillTreeActivity : AppCompatActivity() {
             "shield_strength" to "Increases shield effectiveness by 20% per level"
         )
 
-        val tooltips = mapOf(
-            "projectile_damage" to "Boosts the damage of your projectiles, making each shot more effective against enemies.",
-            "firing_rate" to "Increases how quickly your ship fires projectiles, allowing for faster attacks.",
-            "homing_missiles" to "Adds additional homing missiles to your arsenal, targeting enemies automatically.",
-            "speed_boost" to "Enhances your ship's speed, making it easier to dodge obstacles and enemies.",
-            "fuel_efficiency" to "Reduces fuel consumption, allowing your ship to travel farther on less fuel.",
-            "power_up_duration" to "Extends the duration of power-ups, giving you more time to benefit from their effects.",
-            "max_hp" to "Increases your ship's maximum health, making it more durable in combat.",
-            "hp_regeneration" to "Regenerates health over time, helping your ship recover during long flights.",
-            "shield_strength" to "Improves the effectiveness of your shield power-up, reducing damage taken."
-        )
-
         categories.entries.forEachIndexed { index, (category, skillIds) ->
-            // Category Header
             val categoryLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(16, 16, 16, 16)
@@ -173,19 +191,14 @@ class SkillTreeActivity : AppCompatActivity() {
                 textSize = 20f
                 setTextColor(Color.WHITE)
                 setPadding(0, 0, 0, 8)
-                setBackgroundColor(Color.argb(50, 255, 255, 255)) // Subtle white tint
+                setBackgroundColor(Color.argb(50, 255, 255, 255))
             }
             categoryLayout.addView(categoryText)
 
-            // Skills under this category
             skillIds.forEach { skillId ->
                 val skillLayout = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(16, 8, 16, 8)
-                    setOnLongClickListener(OnLongClickListener {
-                        Toast.makeText(this@SkillTreeActivity, tooltips[skillId], Toast.LENGTH_LONG).show()
-                        true
-                    })
                 }
 
                 val currentLevel = skillManager.skills[skillId] ?: 0
@@ -217,9 +230,12 @@ class SkillTreeActivity : AppCompatActivity() {
                         if (gameEngine.upgradeSkill(skillId)) {
                             updateSkillPointsDisplay()
                             updateSkillView(skillId)
-                            updateBonusesDisplay() // Update bonuses after upgrade
+                            updateBonusesDisplay()
                             animateSkillUpgrade(skillLayout)
-                            audioManager.playPowerUpSound() // Play sound on upgrade
+                            audioManager.playPowerUpSound()
+                            CoroutineScope(Dispatchers.Main).launch {
+                                gameEngine.savePersistentData(gameEngine.getUserId())
+                            }
                         }
                     }
                 }
@@ -242,7 +258,6 @@ class SkillTreeActivity : AppCompatActivity() {
                 skillLayout.addView(progressBar)
                 categoryLayout.addView(skillLayout)
 
-                // Store references for updates
                 skillViews[skillId] = SkillViewHolder(descriptionText, progressBar, upgradeButton)
             }
 

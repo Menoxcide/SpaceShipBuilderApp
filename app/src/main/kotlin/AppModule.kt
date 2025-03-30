@@ -1,12 +1,14 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import dagger.Lazy // Import Lazy
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -74,20 +76,32 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideAIAssistant(): AIAssistant = AIAssistant()
+
+    @Provides
+    @Singleton
+    fun provideFirebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
+
+    @Provides
+    @Singleton
     fun provideFlightModeManager(
         shipManager: ShipManager,
         gameObjectManager: GameObjectManager,
         collisionManager: CollisionManager,
         powerUpManager: PowerUpManager,
         audioManager: AudioManager,
-        gameStateManager: GameStateManager
+        gameStateManager: GameStateManager,
+        aiAssistant: AIAssistant,
+        gameEngine: Lazy<GameEngine> // Use Lazy<GameEngine>
     ): FlightModeManager = FlightModeManager(
         shipManager,
         gameObjectManager,
         collisionManager,
         powerUpManager,
         audioManager,
-        gameStateManager
+        gameStateManager,
+        aiAssistant,
+        gameEngine
     )
 
     @Provides
@@ -100,7 +114,8 @@ object AppModule {
         buildModeManager: BuildModeManager,
         flightModeManager: FlightModeManager,
         achievementManager: AchievementManager,
-        skillManager: SkillManager
+        skillManager: SkillManager,
+        aiAssistant: AIAssistant
     ): GameEngine = GameEngine(
         context,
         renderer,
@@ -109,7 +124,8 @@ object AppModule {
         buildModeManager,
         flightModeManager,
         achievementManager,
-        skillManager
+        skillManager,
+        aiAssistant
     )
 
     @Provides

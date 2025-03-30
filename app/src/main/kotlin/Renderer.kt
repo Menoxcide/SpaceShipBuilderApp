@@ -33,30 +33,30 @@ class Renderer @Inject constructor(
     private var screenWidth: Float = 0f
     private var screenHeight: Float = 0f
 
-    private val powerUpBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.power_up)
+    private var powerUpBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.power_up)
         ?: throw IllegalStateException("Power-up bitmap not found")
-    private val shieldBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.shield_icon)
+    private var shieldBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.shield_icon)
         ?: throw IllegalStateException("Shield bitmap not found")
-    private val speedBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.speed_icon)
+    private var speedBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.speed_icon)
         ?: throw IllegalStateException("Speed bitmap not found")
-    private val stealthBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.stealth_icon)
+    private var stealthBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.stealth_icon)
         ?: throw IllegalStateException("Stealth bitmap not found")
-    private val warpBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.warp_icon)
+    private var warpBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.warp_icon)
         ?: throw IllegalStateException("Warp bitmap not found")
-    private val starBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.star)
+    private var starBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.star)
         ?: throw IllegalStateException("Star bitmap not found")
-    private val asteroidBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
+    private var asteroidBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
         ?: throw IllegalStateException("Asteroid bitmap not found")
-    private val invincibilityBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
+    private var invincibilityBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
         ?: throw IllegalStateException("Invincibility bitmap not found")
-    private val enemyShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
+    private var enemyShipBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
         ?: throw IllegalStateException("Enemy ship bitmap not found")
-    private val bossProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_projectile)
+    private var bossProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_projectile)
         ?: throw IllegalStateException("Boss projectile bitmap not found")
-    private val homingProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.homing_missile)
+    private var homingProjectileBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.homing_missile)
         ?: throw IllegalStateException("Homing missile bitmap not found")
 
-    private val bossShipBitmaps: List<Bitmap> = listOf(
+    private val bossShipBitmaps: MutableList<Bitmap> = mutableListOf(
         BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship_1)
             ?: throw IllegalStateException("Boss ship 1 bitmap not found"),
         BitmapFactory.decodeResource(context.resources, R.drawable.boss_ship_2)
@@ -284,6 +284,13 @@ class Renderer @Inject constructor(
         isAntiAlias = true
         color = Color.YELLOW
     }
+    private val aiMessagePaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 40f
+        color = Color.WHITE
+        textAlign = Paint.Align.LEFT
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+    }
     private var unlockMessage: String? = null
     private var unlockMessageStartTime: Long = 0L
     private val unlockMessageDuration = 5000L
@@ -299,21 +306,20 @@ class Renderer @Inject constructor(
     }
 
     init {
-        // Pre-generate stars once at initialization
-        repeat(100) { // Distant stars
+        repeat(100) {
             distantStars.add(
                 Star(
-                    x = Random.nextFloat() * 10000f, // Larger range for wrapping
+                    x = Random.nextFloat() * 10000f,
                     y = Random.nextFloat() * 10000f,
                     size = Random.nextFloat() * 1f + 0.5f,
                     baseBrightness = Random.nextFloat() * 0.5f + 0.1f,
                     phase = Random.nextFloat() * 2 * Math.PI.toFloat(),
-                    speed = 1f, // Slow for distant stars
-                    color = Color.argb(255, 200, 200, 255) // Slightly bluish tint
+                    speed = 1f,
+                    color = Color.argb(255, 200, 200, 255)
                 )
             )
         }
-        repeat(50) { // Near stars
+        repeat(50) {
             nearStars.add(
                 Star(
                     x = Random.nextFloat() * 10000f,
@@ -321,8 +327,8 @@ class Renderer @Inject constructor(
                     size = Random.nextFloat() * 2f + 1f,
                     baseBrightness = Random.nextFloat() * 0.5f + 0.5f,
                     phase = Random.nextFloat() * 2 * Math.PI.toFloat(),
-                    speed = 3f, // Faster for near stars
-                    color = Color.argb(255, 255, 255, 200) // Slightly yellowish tint
+                    speed = 3f,
+                    color = Color.argb(255, 255, 255, 200)
                 )
             )
         }
@@ -334,10 +340,10 @@ class Renderer @Inject constructor(
     }
 
     fun updateAnimationFrame() {
-        animationFrame = (animationFrame + 0.05f) % (2 * Math.PI.toFloat()) // Smoother animation cycle
+        animationFrame = (animationFrame + 0.05f) % (2 * Math.PI.toFloat())
     }
 
-    fun showUnlockMessage(messages: List<String>) { // Changed to List<String>
+    fun showUnlockMessage(messages: List<String>) {
         if (messages.isNotEmpty()) {
             unlockMessage = "Unlocked: ${messages.joinToString(", ")}"
             unlockMessageStartTime = System.currentTimeMillis()
@@ -349,7 +355,6 @@ class Renderer @Inject constructor(
         this.screenWidth = screenWidth
         this.screenHeight = screenHeight
 
-        // Draw nebula-like gradient
         val gradientIndex = (level - 1) / 10 % 5
         val gradients = listOf(
             intArrayOf(Color.parseColor("#1A0B2E"), Color.parseColor("#2E1A4B"), Color.parseColor("#4B0082")),
@@ -366,11 +371,10 @@ class Renderer @Inject constructor(
         )
         canvas.drawRect(0f, 0f, screenWidth, screenHeight, backgroundPaint)
 
-        // Draw distant stars
         distantStars.forEach { star ->
             star.y += star.speed
             if (star.y > screenHeight + star.size) {
-                star.y -= screenHeight + star.size * 2 // Wrap around
+                star.y -= screenHeight + star.size * 2
                 star.x = Random.nextFloat() * screenWidth
             }
             val brightness = star.baseBrightness * (sin(animationFrame + star.phase) * 0.3f + 0.7f).coerceIn(0f, 1f)
@@ -378,11 +382,10 @@ class Renderer @Inject constructor(
             canvas.drawCircle(star.x, star.y, star.size, starPaint)
         }
 
-        // Draw near stars (parallax effect)
         nearStars.forEach { star ->
             star.y += star.speed
             if (star.y > screenHeight + star.size) {
-                star.y -= screenHeight + star.size * 2 // Wrap around
+                star.y -= screenHeight + star.size * 2
                 star.x = Random.nextFloat() * screenWidth
             }
             val brightness = star.baseBrightness * (sin(animationFrame + star.phase) * 0.4f + 0.6f).coerceIn(0f, 1f)
@@ -438,7 +441,7 @@ class Renderer @Inject constructor(
             else -> shipTintPaint.colorFilter = null
         }
 
-        if (gameState == GameState.FLIGHT && mergedShipBitmap != null) {
+        if (gameState == GameState.FLIGHT && mergedShipBitmap != null && !mergedShipBitmap.isRecycled) {
             val x = shipX - mergedShipBitmap.width / 2f
             val y = shipY - mergedShipBitmap.height / 2f
 
@@ -471,7 +474,6 @@ class Renderer @Inject constructor(
                 canvas.drawBitmap(it, spriteX, spriteY, powerUpPaint)
             }
 
-            // Draw dynamic missile indicator based on total missile count
             val totalMissiles = gameEngine.missileCount
             val indicatorSize = 10f
             val indicatorSpacing = 5f
@@ -535,6 +537,8 @@ class Renderer @Inject constructor(
             }
             particleSystem.drawCollectionParticles(canvas)
             Timber.d("Drawing ship in BUILD mode with ${shipParts.size} parts")
+        } else {
+            Timber.w("Cannot draw ship: invalid state or bitmap (gameState=$gameState, mergedShipBitmap=$mergedShipBitmap)")
         }
     }
 
@@ -543,14 +547,70 @@ class Renderer @Inject constructor(
         powerUps.forEach { powerUp ->
             val y = powerUp.y
             val bitmap = when (powerUp.type) {
-                "shield" -> shieldBitmap
-                "speed" -> speedBitmap
-                "power_up" -> powerUpBitmap
-                "stealth" -> stealthBitmap
-                "warp" -> warpBitmap
-                "star" -> starBitmap
-                "invincibility" -> invincibilityBitmap
-                else -> powerUpBitmap
+                "shield" -> {
+                    if (shieldBitmap.isRecycled) {
+                        Timber.w("Shield bitmap was recycled, reinitializing")
+                        shieldBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.shield_icon)
+                            ?: throw IllegalStateException("Failed to reload shield bitmap")
+                    }
+                    shieldBitmap
+                }
+                "speed" -> {
+                    if (speedBitmap.isRecycled) {
+                        Timber.w("Speed bitmap was recycled, reinitializing")
+                        speedBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.speed_icon)
+                            ?: throw IllegalStateException("Failed to reload speed bitmap")
+                    }
+                    speedBitmap
+                }
+                "power_up" -> {
+                    if (powerUpBitmap.isRecycled) {
+                        Timber.w("Power-up bitmap was recycled, reinitializing")
+                        powerUpBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.power_up)
+                            ?: throw IllegalStateException("Failed to reload power-up bitmap")
+                    }
+                    powerUpBitmap
+                }
+                "stealth" -> {
+                    if (stealthBitmap.isRecycled) {
+                        Timber.w("Stealth bitmap was recycled, reinitializing")
+                        stealthBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.stealth_icon)
+                            ?: throw IllegalStateException("Failed to reload stealth bitmap")
+                    }
+                    stealthBitmap
+                }
+                "warp" -> {
+                    if (warpBitmap.isRecycled) {
+                        Timber.w("Warp bitmap was recycled, reinitializing")
+                        warpBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.warp_icon)
+                            ?: throw IllegalStateException("Failed to reload warp bitmap")
+                    }
+                    warpBitmap
+                }
+                "star" -> {
+                    if (starBitmap.isRecycled) {
+                        Timber.w("Star bitmap was recycled, reinitializing")
+                        starBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.star)
+                            ?: throw IllegalStateException("Failed to reload star bitmap")
+                    }
+                    starBitmap
+                }
+                "invincibility" -> {
+                    if (invincibilityBitmap.isRecycled) {
+                        Timber.w("Invincibility bitmap was recycled, reinitializing")
+                        invincibilityBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
+                            ?: throw IllegalStateException("Failed to reload invincibility bitmap")
+                    }
+                    invincibilityBitmap
+                }
+                else -> {
+                    if (powerUpBitmap.isRecycled) {
+                        Timber.w("Default power-up bitmap was recycled, reinitializing")
+                        powerUpBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.power_up)
+                            ?: throw IllegalStateException("Failed to reload default power-up bitmap")
+                    }
+                    powerUpBitmap
+                }
             }
             val x = powerUp.x - bitmap.width / 2f
             canvas.drawBitmap(bitmap, x, y - bitmap.height / 2f, powerUpPaint)
@@ -563,6 +623,11 @@ class Renderer @Inject constructor(
         asteroids.forEach { asteroid ->
             val y = asteroid.y
             val x = asteroid.x - asteroid.size
+            if (asteroidBitmap.isRecycled) {
+                Timber.w("Asteroid bitmap was recycled, reinitializing")
+                asteroidBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
+                    ?: throw IllegalStateException("Failed to reload asteroid bitmap")
+            }
             val scaledBitmap = Bitmap.createScaledBitmap(
                 asteroidBitmap,
                 (asteroid.size * 2).toInt(),
@@ -589,6 +654,11 @@ class Renderer @Inject constructor(
     fun drawEnemyShips(canvas: Canvas, enemyShips: List<EnemyShip>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyShips.size} enemy ships")
         enemyShips.forEach { enemy ->
+            if (enemyShipBitmap.isRecycled) {
+                Timber.w("Enemy ship bitmap was recycled, reinitializing")
+                enemyShipBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
+                    ?: throw IllegalStateException("Failed to reload enemy ship bitmap")
+            }
             val scaledBitmap = Bitmap.createScaledBitmap(enemyShipBitmap, 100, 100, true)
             canvas.drawBitmap(scaledBitmap, enemy.x - 50f, enemy.y - 50f, asteroidPaint)
             if (BuildConfig.DEBUG) Timber.d("Drawing enemy ship at (x=${enemy.x}, y=${enemy.y})")
@@ -599,7 +669,17 @@ class Renderer @Inject constructor(
         if (boss == null) return
         if (BuildConfig.DEBUG) Timber.d("Drawing boss at (x=${boss.x}, y=${boss.y}) with tier=${boss.tier}")
         val bitmapIndex = (boss.tier - 1) % bossShipBitmaps.size
-        val bossBitmap = bossShipBitmaps[bitmapIndex]
+        var bossBitmap = bossShipBitmaps[bitmapIndex]
+        if (bossBitmap.isRecycled) {
+            Timber.w("Boss ship bitmap $bitmapIndex was recycled, reinitializing")
+            bossShipBitmaps[bitmapIndex] = BitmapFactory.decodeResource(context.resources, when (bitmapIndex) {
+                0 -> R.drawable.boss_ship_1
+                1 -> R.drawable.boss_ship_2
+                2 -> R.drawable.boss_ship_3
+                else -> R.drawable.boss_ship_1
+            }) ?: throw IllegalStateException("Failed to reload boss ship bitmap $bitmapIndex")
+            bossBitmap = bossShipBitmaps[bitmapIndex]
+        }
         val scaledBitmap = Bitmap.createScaledBitmap(bossBitmap, 150, 150, true)
         canvas.drawBitmap(scaledBitmap, boss.x - 75f, boss.y - 75f, bossPaint)
 
@@ -621,6 +701,11 @@ class Renderer @Inject constructor(
     fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<Projectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyProjectiles.size} enemy projectiles")
         enemyProjectiles.forEach { projectile ->
+            if (bossProjectileBitmap.isRecycled) {
+                Timber.w("Boss projectile bitmap was recycled, reinitializing")
+                bossProjectileBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.boss_projectile)
+                    ?: throw IllegalStateException("Failed to reload boss projectile bitmap")
+            }
             val scaledBitmap = Bitmap.createScaledBitmap(bossProjectileBitmap, 20, 20, true)
             canvas.drawBitmap(scaledBitmap, projectile.x - scaledBitmap.width / 2f, projectile.y - scaledBitmap.height / 2f, enemyProjectilePaint)
             if (BuildConfig.DEBUG) Timber.d("Drawing enemy projectile at (x=${projectile.x}, y=${projectile.y})")
@@ -630,6 +715,11 @@ class Renderer @Inject constructor(
     fun drawHomingProjectiles(canvas: Canvas, homingProjectiles: List<HomingProjectile>, statusBarHeight: Float) {
         if (BuildConfig.DEBUG) Timber.d("Drawing ${homingProjectiles.size} homing projectiles")
         homingProjectiles.forEach { projectile ->
+            if (homingProjectileBitmap.isRecycled) {
+                Timber.w("Homing projectile bitmap was recycled, reinitializing")
+                homingProjectileBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.homing_missile)
+                    ?: throw IllegalStateException("Failed to reload homing missile bitmap")
+            }
             val scaledBitmap = Bitmap.createScaledBitmap(homingProjectileBitmap, 20, 20, true)
             canvas.drawBitmap(
                 scaledBitmap,
@@ -685,6 +775,8 @@ class Renderer @Inject constructor(
             } else {
                 unlockMessage = null
             }
+
+            drawAIMessages(canvas, gameEngine.aiAssistant, statusBarHeight)
         } else if (gameState == GameState.BUILD) {
             val longestDistanceText = "Longest Distance: ${gameEngine.longestDistanceTraveled.toInt()}"
             val highestScoreText = "Highest Score: ${gameEngine.highestScore}"
@@ -695,6 +787,20 @@ class Renderer @Inject constructor(
             canvas.drawText(highestScoreText, screenWidth / 2f, startY + textHeight, highestScorePaint)
             canvas.drawText(highestLevelText, screenWidth / 2f, startY + 2 * textHeight, highestLevelPaint)
             canvas.drawText(starsCollectedText, screenWidth / 2f, startY + 3 * textHeight, starsCollectedPaint)
+        }
+    }
+
+    private fun drawAIMessages(canvas: Canvas, aiAssistant: AIAssistant, statusBarHeight: Float) {
+        val messages = aiAssistant.getDisplayedMessages()
+        val startX = 20f
+        val startY = statusBarHeight + 50f
+        val lineHeight = 50f
+
+        messages.forEachIndexed { index, message ->
+            canvas.drawText(message, startX, startY + index * lineHeight, aiMessagePaint)
+        }
+        if (BuildConfig.DEBUG && messages.isNotEmpty()) {
+            Timber.d("Drawing ${messages.size} AI messages: ${messages.joinToString(", ")}")
         }
     }
 
@@ -710,18 +816,7 @@ class Renderer @Inject constructor(
         if (!cockpitPlaceholderBitmap.isRecycled) cockpitPlaceholderBitmap.recycle()
         if (!fuelTankPlaceholderBitmap.isRecycled) fuelTankPlaceholderBitmap.recycle()
         if (!enginePlaceholderBitmap.isRecycled) enginePlaceholderBitmap.recycle()
-        if (!powerUpBitmap.isRecycled) powerUpBitmap.recycle()
-        if (!shieldBitmap.isRecycled) shieldBitmap.recycle()
-        if (!speedBitmap.isRecycled) speedBitmap.recycle()
-        if (!stealthBitmap.isRecycled) stealthBitmap.recycle()
-        if (!warpBitmap.isRecycled) warpBitmap.recycle()
-        if (!starBitmap.isRecycled) starBitmap.recycle()
-        if (!asteroidBitmap.isRecycled) asteroidBitmap.recycle()
-        if (!invincibilityBitmap.isRecycled) invincibilityBitmap.recycle()
-        if (!enemyShipBitmap.isRecycled) enemyShipBitmap.recycle()
-        bossShipBitmaps.forEach { if (!it.isRecycled) it.recycle() }
-        if (!bossProjectileBitmap.isRecycled) bossProjectileBitmap.recycle()
-        if (!homingProjectileBitmap.isRecycled) homingProjectileBitmap.recycle()
         particleSystem.onDestroy()
+        Timber.d("Renderer onDestroy called")
     }
 }

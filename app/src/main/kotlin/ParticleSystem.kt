@@ -25,9 +25,10 @@ class ParticleSystem(private val context: Context) {
     private val explosionParticles = CopyOnWriteArrayList<ExplosionParticle>()
     private val powerUpSpriteParticles = CopyOnWriteArrayList<PowerUpSpriteParticle>()
     private val scoreTextParticles = CopyOnWriteArrayList<ScoreTextParticle>()
-    private val missileExhaustParticles = CopyOnWriteArrayList<MissileExhaustParticle>() // Added for missile exhaust
+    private val missileExhaustParticles = CopyOnWriteArrayList<MissileExhaustParticle>()
 
-    private val exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
+    private var exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
+        ?: throw IllegalStateException("Exhaust bitmap not found")
     private val exhaustPaint = Paint().apply { isAntiAlias = true }
     private val collectionPaint = Paint().apply { isAntiAlias = true }
     private val collisionPaint = Paint().apply { isAntiAlias = true }
@@ -48,7 +49,7 @@ class ParticleSystem(private val context: Context) {
         color = Color.GREEN
         textAlign = Paint.Align.CENTER
     }
-    private val missileExhaustPaint = Paint().apply { // Added for missile exhaust
+    private val missileExhaustPaint = Paint().apply {
         isAntiAlias = true
         color = Color.YELLOW
     }
@@ -118,7 +119,7 @@ class ParticleSystem(private val context: Context) {
         const val EXPLOSION_LIFE_DECAY = 0.03f
         const val POWER_UP_SPRITE_COUNT = 5
         const val SCORE_TEXT_LIFE_DECAY = 0.02f
-        const val MISSILE_EXHAUST_LIFE_DECAY = 0.05f // Added for missile exhaust
+        const val MISSILE_EXHAUST_LIFE_DECAY = 0.05f
     }
 
     data class ExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
@@ -208,7 +209,7 @@ class ParticleSystem(private val context: Context) {
         fun isDead() = life <= 0f
     }
 
-    data class MissileExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float) { // Added for missile exhaust
+    data class MissileExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float) {
         fun update() {
             x += speedX
             y += speedY
@@ -350,8 +351,8 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Added score text particle at (x=$x, y=$y) with text: $text")
     }
 
-    fun addMissileExhaustParticles(x: Float, y: Float) { // Added for missile exhaust
-        repeat(2) { // Fewer particles for performance
+    fun addMissileExhaustParticles(x: Float, y: Float) {
+        repeat(2) {
             val speedX = Random.nextFloat() * 2f - 1f
             val speedY = Random.nextFloat() * 3f + 2f
             missileExhaustParticles.add(
@@ -360,7 +361,7 @@ class ParticleSystem(private val context: Context) {
                     y = y,
                     speedX = speedX,
                     speedY = speedY,
-                    life = 0.5f, // Short lifespan for exhaust
+                    life = 0.5f,
                     size = Random.nextFloat() * 3f + 2f
                 )
             )
@@ -368,6 +369,12 @@ class ParticleSystem(private val context: Context) {
     }
 
     fun drawExhaustParticles(canvas: Canvas) {
+        if (exhaustBitmap.isRecycled) {
+            Timber.w("Exhaust bitmap was recycled, reinitializing")
+            exhaustBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
+                ?: throw IllegalStateException("Failed to reload exhaust bitmap")
+        }
+
         val particlesToRemove = mutableListOf<ExhaustParticle>()
         exhaustParticles.forEach { particle ->
             particle.update()
@@ -499,7 +506,7 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${scoreTextParticles.size} score text particles")
     }
 
-    fun drawMissileExhaustParticles(canvas: Canvas) { // Added for missile exhaust
+    fun drawMissileExhaustParticles(canvas: Canvas) {
         val particlesToRemove = mutableListOf<MissileExhaustParticle>()
         missileExhaustParticles.forEach { particle ->
             particle.update()
@@ -521,12 +528,13 @@ class ParticleSystem(private val context: Context) {
         explosionParticles.clear()
         powerUpSpriteParticles.clear()
         scoreTextParticles.clear()
-        missileExhaustParticles.clear() // Added cleanup
+        missileExhaustParticles.clear()
     }
 
     fun onDestroy() {
-        if (!exhaustBitmap.isRecycled) exhaustBitmap.recycle()
         clearParticles()
+        // Do not recycle exhaustBitmap here; keep it alive for the app's lifetime
+        Timber.d("ParticleSystem onDestroy called")
     }
 
     fun getGlowParticleCount(): Int {

@@ -50,7 +50,6 @@ class MainActivity : AppCompatActivity() {
     private val audioPermissionCode = 100
     private var userId: String? = null
 
-    // AdMob Rewarded Ad variables
     private var rewardedAd: RewardedAd? = null
     private val adUnitId = "ca-app-pub-3940256099942544/5224354917" // Test Rewarded Ad Unit ID
 
@@ -89,7 +88,7 @@ class MainActivity : AppCompatActivity() {
                 isDragging = true
                 draggedPartType = partType
                 binding.buildView.setSelectedPart(Part(partType, bitmap, initialX, initialY, 0f, 1f))
-                if (BuildConfig.DEBUG) Timber.d("$partType selected at (x=$initialX, y=$initialY)")
+                Timber.d("$partType selected at (x=$initialX, y=$initialY)")
                 true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -97,7 +96,7 @@ class MainActivity : AppCompatActivity() {
                     val x = event.rawX
                     val y = event.rawY
                     binding.buildView.setSelectedPart(Part(partType, bitmap, x, y, 0f, 1f))
-                    if (BuildConfig.DEBUG) Timber.d("Dragging $partType to (x=$x, y=$y)")
+                    Timber.d("Dragging $partType to (x=$x, y=$y)")
                 }
                 true
             }
@@ -117,7 +116,7 @@ class MainActivity : AppCompatActivity() {
                             part.y = targetY
                             part.scale = buildModeManager.placeholders.find { it.type == partType }?.scale ?: 1f
                             buildModeManager.parts.add(part)
-                            if (BuildConfig.DEBUG) Timber.d("Snapped $partType to (x=${part.x}, y=${part.y}) with scale=${part.scale}, parts count: ${buildModeManager.parts.size}")
+                            Timber.d("Snapped $partType to (x=${part.x}, y=${part.y}) with scale=${part.scale}, parts count: ${buildModeManager.parts.size}")
                             if (buildModeManager.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
                                 val shipCenterX = gameEngine.screenWidth / 2f
                                 val shipCenterY = (buildModeManager.cockpitY + buildModeManager.engineY) / 2f
@@ -125,16 +124,16 @@ class MainActivity : AppCompatActivity() {
                                 Timber.d("Ship fully assembled and spaceworthy! Triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
                             }
                         } else {
-                            if (BuildConfig.DEBUG) Timber.d("Invalid placement - Distance=$distance, Overlap=${inputHandler.checkOverlap(targetX, targetY, part)}")
+                            Timber.d("Invalid placement - Distance=$distance, Overlap=${inputHandler.checkOverlap(targetX, targetY, part)}")
                         }
                     } else {
-                        if (BuildConfig.DEBUG) Timber.d("No target position found for $partType")
+                        Timber.d("No target position found for $partType")
                     }
                     buildModeManager.selectedPart = null
                     draggedPartType = null
                     view.visibility = View.VISIBLE
                     view.performClick()
-                    if (BuildConfig.DEBUG) Timber.d("Dropped $partType, snapping handled")
+                    Timber.d("Dropped $partType, snapping handled")
                     gameEngine.notifyLaunchListener()
                 }
                 true
@@ -151,14 +150,14 @@ class MainActivity : AppCompatActivity() {
             MotionEvent.ACTION_DOWN -> {
                 buildModeManager.parts.remove(part)
                 binding.buildView.setSelectedPart(part)
-                if (BuildConfig.DEBUG) Timber.d("Picked up placed $draggedPartType at (x=${part.x}, y=${part.y})")
+                Timber.d("Picked up placed $draggedPartType at (x=${part.x}, y=${part.y})")
                 true
             }
             MotionEvent.ACTION_MOVE -> {
                 val x = event.rawX
                 val y = event.rawY
                 binding.buildView.setSelectedPart(Part(part.type, part.bitmap, x, y, part.rotation, part.scale))
-                if (BuildConfig.DEBUG) Timber.d("Dragging placed $draggedPartType to (x=$x, y=$y)")
+                Timber.d("Dragging placed $draggedPartType to (x=$x, y=$y)")
                 true
             }
             MotionEvent.ACTION_UP -> {
@@ -168,7 +167,7 @@ class MainActivity : AppCompatActivity() {
                 isDragging = false
                 draggedPartType = null
                 view.performClick()
-                if (BuildConfig.DEBUG) Timber.d("Dropped placed $part.type at (x=$x, y=$y)")
+                Timber.d("Dropped placed $part.type at (x=$x, y=$y)")
                 true
             }
             else -> false
@@ -180,7 +179,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        Timber.plant(Timber.DebugTree())
         Timber.d("View layout initialized")
 
         voiceHandler = VoiceCommandHandler(this) { /* Callback set later */ }
@@ -188,7 +187,6 @@ class MainActivity : AppCompatActivity() {
         binding.buildView.setOnTouchListener(placedPartTouchListener)
         binding.playerNameInput.isVisible = false
 
-        // Initialize AdMob SDK
         MobileAds.initialize(this) {
             Timber.d("AdMob SDK initialized")
             loadRewardedAd()
@@ -197,32 +195,26 @@ class MainActivity : AppCompatActivity() {
         handler.post(animationRunnable)
         requestAudioPermission()
 
-        // Initialize the destroyAllButton synchronously to avoid uninitialized access
         binding.flightView.setDestroyAllButton(binding.destroyAllButton)
 
-        // Set up a listener to set screen dimensions as soon as the view is laid out
         val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 val width = binding.flightView.width.toFloat()
                 val height = binding.flightView.height.toFloat()
                 if (width > 0f && height > 0f) {
-                    // Set dimensions in GameEngine
                     gameEngine.setScreenDimensions(width, height)
                     Timber.d("Set screen dimensions in MainActivity: width=$width, height=$height")
-                    // Remove the listener to avoid repeated calls
                     binding.flightView.viewTreeObserver.removeOnGlobalLayoutListener(this)
                 }
             }
         }
         binding.flightView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
 
-        // Handle window insets for status bar height
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
             binding.buildView.setStatusBarHeight(statusBarHeight)
             binding.flightView.setStatusBarHeight(statusBarHeight)
             binding.flightView.setUserId(userId ?: "default_user")
-            // Update dimensions with status bar height
             val width = binding.flightView.width.toFloat()
             val height = binding.flightView.height.toFloat()
             if (width > 0f && height > 0f) {
@@ -281,33 +273,37 @@ class MainActivity : AppCompatActivity() {
                 binding.flightView.isVisible = isLaunching
                 binding.flightView.isEnabled = isLaunching
                 binding.playerNameInput.isVisible = false
-                binding.navigationButtons.isVisible = !isLaunching // Control visibility of all navigation buttons
+                binding.navigationButtons.isVisible = !isLaunching
                 if (isLaunching) {
                     binding.flightView.requestFocus()
                     binding.flightView.setGameMode(GameState.FLIGHT)
                     binding.flightView.postInvalidate()
-                    if (BuildConfig.DEBUG) Timber.d("FlightView focused: ${binding.flightView.isFocused}, invalidated")
+                    Timber.d("FlightView focused: ${binding.flightView.isFocused}, invalidated")
                 } else {
+                    if (gameEngine.flightModeManager.currentScore > 0) {
+                        Timber.d("Saving score ${gameEngine.flightModeManager.currentScore} before switching to build mode")
+                        gameEngine.flightModeManager.onDestroy() // Save score on manual exit
+                    }
                     binding.buildView.setOnTouchListener(placedPartTouchListener)
                     binding.flightView.setGameMode(GameState.BUILD)
                     binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
-                    if (BuildConfig.DEBUG) Timber.d("BuildView focused: ${binding.buildView.isFocused}")
+                    Timber.d("BuildView focused: ${binding.buildView.isFocused}")
                     setupShipSpinner()
                 }
                 val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && buildModeManager.parts.size == 3 && !isLaunching
                 setLaunchButtonVisibility(isLaunchReady)
-                if (BuildConfig.DEBUG) {
-                    Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${buildModeManager.parts.size}, isLaunching=$isLaunching")
-                    if (!isLaunchReady) {
-                        Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight)}")
-                    }
+                Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${buildModeManager.parts.size}, isLaunching=$isLaunching")
+                if (!isLaunchReady) {
+                    Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight)}")
                 }
             }
 
             gameEngine.setGameOverListener { canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild ->
+                Timber.d("Game over listener triggered: canContinue=$canContinue, canUseRevive=$canUseRevive")
                 if (canContinue || canUseRevive) {
                     showContinueDialog(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild)
                 } else {
+                    Timber.d("No continue options available, executing return to build")
                     onReturnToBuild()
                 }
             }
@@ -406,49 +402,58 @@ class MainActivity : AppCompatActivity() {
         onContinueWithRevive: () -> Unit,
         onReturnToBuild: () -> Unit
     ) {
-        val dialog = android.app.Dialog(this)
-        dialog.setContentView(R.layout.dialog_continue)
-        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        Timber.d("Showing continue dialog: canContinueWithAd=$canContinueWithAd, canUseRevive=$canUseRevive")
+        try {
+            val dialog = android.app.Dialog(this)
+            dialog.setContentView(R.layout.dialog_continue)
+            dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
-        val messageText = dialog.findViewById<TextView>(R.id.continueMessage)
-        val watchAdButton = dialog.findViewById<Button>(R.id.watchAdButton)
-        val useReviveButton = dialog.findViewById<Button>(R.id.useReviveButton)
-        val returnButton = dialog.findViewById<Button>(R.id.returnButton)
+            val messageText = dialog.findViewById<TextView>(R.id.continueMessage)
+            val watchAdButton = dialog.findViewById<Button>(R.id.watchAdButton)
+            val useReviveButton = dialog.findViewById<Button>(R.id.useReviveButton)
+            val returnButton = dialog.findViewById<Button>(R.id.returnButton)
 
-        messageText.text = "Game Over! Continue?"
-        watchAdButton.text = "Watch Ad"
-        useReviveButton.text = "Use Revive (${gameEngine.reviveCount}/3)"
-        returnButton.text = "Return to Build"
+            messageText.text = "Game Over! Continue?"
+            watchAdButton.text = "Watch Ad"
+            useReviveButton.text = "Use Revive (${gameEngine.reviveCount}/3)"
+            returnButton.text = "Back to Build"
 
-        watchAdButton.visibility = if (canContinueWithAd) View.VISIBLE else View.GONE
-        useReviveButton.visibility = if (canUseRevive) View.VISIBLE else View.GONE
+            watchAdButton.visibility = if (canContinueWithAd) View.VISIBLE else View.GONE
+            useReviveButton.visibility = if (canUseRevive) View.VISIBLE else View.GONE
 
-        watchAdButton.setOnClickListener {
-            if (rewardedAd != null) {
-                rewardedAd?.show(this) { rewardItem ->
-                    Timber.d("User earned reward: ${rewardItem.amount} ${rewardItem.type}")
-                    onContinueWithAd()
+            watchAdButton.setOnClickListener {
+                Timber.d("Watch Ad button clicked")
+                if (rewardedAd != null) {
+                    rewardedAd?.show(this) { rewardItem ->
+                        Timber.d("User earned reward: ${rewardItem.amount} ${rewardItem.type}")
+                        onContinueWithAd()
+                    }
+                    dialog.dismiss()
+                } else {
+                    showToast("Ad not ready, please try again later", Toast.LENGTH_LONG)
+                    onReturnToBuild()
+                    dialog.dismiss()
                 }
+            }
+
+            useReviveButton.setOnClickListener {
+                Timber.d("Use Revive button clicked")
+                onContinueWithRevive()
                 dialog.dismiss()
-            } else {
-                showToast("Ad not ready, please try again later", Toast.LENGTH_LONG)
+            }
+
+            returnButton.setOnClickListener {
+                Timber.d("Back to Build button clicked")
                 onReturnToBuild()
                 dialog.dismiss()
             }
-        }
 
-        useReviveButton.setOnClickListener {
-            onContinueWithRevive()
-            dialog.dismiss()
-        }
-
-        returnButton.setOnClickListener {
+            dialog.setCancelable(false)
+            dialog.show()
+        } catch (e: Exception) {
+            Timber.e(e, "Exception in showContinueDialog: ${e.message}")
             onReturnToBuild()
-            dialog.dismiss()
         }
-
-        dialog.setCancelable(false)
-        dialog.show()
     }
 
     private fun requestAudioPermission() {
@@ -475,7 +480,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         binding.launchButton.setOnClickListener {
-            if (BuildConfig.DEBUG) Timber.d("Launch button clicked")
+            Timber.d("Launch button clicked")
             val success = binding.buildView.launchShip()
             if (!success) {
                 showToast(binding.buildView.gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight), Toast.LENGTH_LONG)
@@ -483,28 +488,33 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.leaderboardButton.setOnClickListener {
-            if (BuildConfig.DEBUG) Timber.d("Leaderboard button clicked")
+            Timber.d("Leaderboard button clicked")
             val intent = Intent(this, LeaderboardActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
         binding.shopButton.setOnClickListener {
-            if (BuildConfig.DEBUG) Timber.d("Galactic Shop button clicked")
+            Timber.d("Galactic Shop button clicked")
             val intent = Intent(this, GalacticShopActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
         binding.achievementsButton.setOnClickListener {
-            if (BuildConfig.DEBUG) Timber.d("Achievements button clicked")
+            Timber.d("Achievements button clicked")
             val intent = Intent(this, AchievementsActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
         binding.skillTreeButton.setOnClickListener {
-            if (BuildConfig.DEBUG) Timber.d("Skill Tree button clicked")
+            Timber.d("Skill Tree button clicked")
+            if (gameStateManager.gameState == GameState.FLIGHT) {
+                Timber.d("Exiting flight mode to open Skill Tree")
+                gameEngine.flightModeManager.onDestroy()
+                gameStateManager.setGameState(GameState.BUILD, gameEngine.screenWidth, gameEngine.screenHeight, gameEngine.flightModeManager::resetFlightData, { _ -> }, userId)
+            }
             val intent = Intent(this, SkillTreeActivity::class.java)
             startActivity(intent)
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
@@ -519,27 +529,19 @@ class MainActivity : AppCompatActivity() {
 
     fun setLaunchButtonVisibility(isVisible: Boolean) {
         binding.launchButton.isVisible = isVisible
-        if (BuildConfig.DEBUG) Timber.d("Launch button visibility set to $isVisible")
+        Timber.d("Launch button visibility set to $isVisible")
 
         if (isVisible) {
-            // Position the launch button on the fuel tank
             binding.launchButton.post {
-                // Get the fuel tank's Y position from BuildModeManager
                 val fuelTankY: Float = buildModeManager.fuelTankY
                 val screenWidth: Float = gameEngine.screenWidth
-
-                // Center the button horizontally
                 val buttonWidth: Float = binding.launchButton.width.toFloat()
                 val widthDifference: Float = screenWidth - buttonWidth
                 val buttonX: Float = widthDifference / 2.0f
-
-                // Set the Y position to the fuel tank's Y coordinate
-                // Adjust for the button's height to center it vertically on the fuel tank
                 val buttonHeight: Float = binding.launchButton.height.toFloat()
                 val halfButtonHeight: Float = buttonHeight / 2.0f
                 val buttonY: Float = fuelTankY - halfButtonHeight
 
-                // Apply the position
                 binding.launchButton.x = buttonX
                 binding.launchButton.y = buttonY
 
@@ -548,12 +550,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onBackPressed() {
+        if (gameStateManager.gameState == GameState.FLIGHT) {
+            Timber.d("Back pressed in flight mode, saving score and returning to build")
+            gameEngine.flightModeManager.onDestroy()
+            gameStateManager.setGameState(GameState.BUILD, gameEngine.screenWidth, gameEngine.screenHeight, gameEngine.flightModeManager::resetFlightData, { _ -> }, userId)
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(animationRunnable)
+        Timber.d("MainActivity onDestroy called")
         gameEngine.onDestroy()
         voiceHandler.stopListening()
         audioManager.onDestroy()
-        if (BuildConfig.DEBUG) Timber.d("Activity destroyed")
+        Timber.d("Activity destroyed")
     }
 }

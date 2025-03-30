@@ -1,5 +1,6 @@
 package com.example.spaceshipbuilderapp
 
+import dagger.Lazy
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.random.Random
@@ -10,7 +11,9 @@ class FlightModeManager @Inject constructor(
     val collisionManager: CollisionManager,
     val powerUpManager: PowerUpManager,
     private val audioManager: AudioManager,
-    private val gameStateManager: GameStateManager
+    private val gameStateManager: GameStateManager,
+    private val aiAssistant: AIAssistant,
+    private val gameEngine: Lazy<GameEngine>
 ) {
     var currentScore = 0
     var highestScore = 0
@@ -31,6 +34,8 @@ class FlightModeManager @Inject constructor(
 
     private var lastScoreUpdateTime = System.currentTimeMillis()
     private var lastDistanceUpdateTime = System.currentTimeMillis()
+
+    private var userId: String = "default_user"
 
     companion object {
         const val LEVEL_UP_ANIMATION_DURATION = 5000L
@@ -64,231 +69,255 @@ class FlightModeManager @Inject constructor(
         onLongestDistanceTraveledChange: (Float) -> Unit,
         onBossDefeatedChange: () -> Unit
     ) {
-        if (gameStateManager.gameState != GameState.FLIGHT) {
-            Timber.d("FlightModeManager update skipped: gameState=${gameStateManager.gameState}")
-            return
-        }
-
-        val currentTime = System.currentTimeMillis()
-
-        // Update power-up effects
-        powerUpManager.updatePowerUpEffects(shipManager)
-
-        // Update ship fuel
-        shipManager.fuel -= shipManager.currentFuelConsumption
-
-        // Update missile count
-        if (shipManager.missileCount < shipManager.maxMissiles && currentTime - shipManager.lastMissileRechargeTime >= shipManager.missileRechargeTime) {
-            shipManager.missileCount++
-            shipManager.lastMissileRechargeTime = currentTime
-            Timber.d("Missile recharged. Current count: ${shipManager.missileCount}")
-        }
-
-        // Update game objects
-        gameObjectManager.updateGameObjects(
-            level = shipManager.level,
-            shipX = shipManager.shipX,
-            shipY = shipManager.shipY,
-            currentProjectileSpeed = shipManager.currentProjectileSpeed,
-            screenWidth = shipManager.screenWidth,
-            screenHeight = shipManager.screenHeight,
-            onBossDefeated = {
-                currentScore += 500
-                shipManager.level++
-                onLevelChange(shipManager.level)
-                levelUpAnimationStartTime = currentTime
-                onBossDefeatedChange()
-                if (shipManager.level > shipManager.highestLevel) {
-                    shipManager.highestLevel = shipManager.level
-                    onHighestLevelChange(shipManager.highestLevel)
-                    val previousUnlocked = shipManager.getUnlockedShipSets().toList()
-                    shipManager.updateUnlockedShipSets(shipManager.highestLevel, shipManager.starsCollected)
-                    val newUnlocked = shipManager.getUnlockedShipSets().filter { it !in previousUnlocked }
-                    if (newUnlocked.isNotEmpty()) {
-                        gameObjectManager.renderer.showUnlockMessage(newUnlocked.map { "Ship Set ${it + 1}" })
-                    }
-                }
-                Timber.d("Boss defeated, level increased to ${shipManager.level}")
+        try {
+            if (gameStateManager.gameState != GameState.FLIGHT) {
+                Timber.d("FlightModeManager update skipped: gameState=${gameStateManager.gameState}")
+                return
             }
-        )
 
-        // Update distance traveled only if no boss is present
-        if (currentTime - lastDistanceUpdateTime >= 1000 && gameObjectManager.getBoss() == null) {
-            sessionDistanceTraveled += shipManager.currentSpeed
-            distanceTraveled += shipManager.currentSpeed
-            onDistanceTraveledChange(distanceTraveled)
-            lastDistanceUpdateTime = currentTime
-            Timber.d("Session distance traveled: $sessionDistanceTraveled, Total distance traveled: $distanceTraveled")
-            val totalDistanceForLevel = distanceTraveled
-            if (totalDistanceForLevel >= distancePerLevel * shipManager.level) {
-                shipManager.level++
-                onLevelChange(shipManager.level)
-                levelUpAnimationStartTime = currentTime
-                if (shipManager.level > shipManager.highestLevel) {
-                    shipManager.highestLevel = shipManager.level
-                    onHighestLevelChange(shipManager.highestLevel)
-                    val previousUnlocked = shipManager.getUnlockedShipSets().toList()
-                    shipManager.updateUnlockedShipSets(shipManager.highestLevel, shipManager.starsCollected)
-                    val newUnlocked = shipManager.getUnlockedShipSets().filter { it !in previousUnlocked }
-                    if (newUnlocked.isNotEmpty()) {
-                        gameObjectManager.renderer.showUnlockMessage(newUnlocked.map { "Ship Set ${it + 1}" })
-                    }
-                }
-                Timber.d("Level advanced to ${shipManager.level} based on total distance traveled: $totalDistanceForLevel")
+            val currentTime = System.currentTimeMillis()
+
+            powerUpManager.updatePowerUpEffects(shipManager)
+            shipManager.fuel -= shipManager.currentFuelConsumption
+
+            if (shipManager.missileCount < shipManager.maxMissiles && currentTime - shipManager.lastMissileRechargeTime >= shipManager.missileRechargeTime) {
+                shipManager.missileCount++
+                shipManager.lastMissileRechargeTime = currentTime
+                Timber.d("Missile recharged. Current count: ${shipManager.missileCount}")
             }
-        }
 
-        // Update score
-        if (currentTime - lastScoreUpdateTime >= 1000) {
-            currentScore += 10
-            lastScoreUpdateTime = currentTime
-        }
-
-        // Check collisions
-        val (scoreDelta, newGlowStartTime) = collisionManager.checkCollisions(
-            shipX = shipManager.shipX,
-            shipY = shipManager.shipY,
-            maxPartHalfWidth = shipManager.maxPartHalfWidth,
-            totalShipHeight = shipManager.totalShipHeight,
-            stealthActive = powerUpManager.stealthActive,
-            invincibilityActive = powerUpManager.invincibilityActive,
-            powerUps = gameObjectManager.powerUps,
-            asteroids = gameObjectManager.asteroids,
-            projectiles = gameObjectManager.projectiles,
-            enemyShips = gameObjectManager.enemyShips,
-            enemyProjectiles = gameObjectManager.enemyProjectiles,
-            homingProjectiles = gameObjectManager.homingProjectiles,
-            boss = gameObjectManager.getBoss(),
-            onPowerUpCollected = { powerUp ->
-                when (powerUp.type) {
-                    "power_up" -> {
-                        shipManager.fuel = (shipManager.fuel + 20f).coerceAtMost(shipManager.fuelCapacity)
-                        shipManager.hp = (shipManager.hp + 10f).coerceAtMost(shipManager.maxHp)
-                        gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Fuel +20", powerUp.type)
-                        Timber.d("Collected power-up: Fuel +20, HP +10")
+            gameObjectManager.updateGameObjects(
+                level = shipManager.level,
+                shipX = shipManager.shipX,
+                shipY = shipManager.shipY,
+                currentProjectileSpeed = shipManager.currentProjectileSpeed,
+                screenWidth = shipManager.screenWidth,
+                screenHeight = shipManager.screenHeight,
+                onBossDefeated = {
+                    currentScore += 500
+                    shipManager.level++
+                    onLevelChange(shipManager.level)
+                    levelUpAnimationStartTime = currentTime
+                    onBossDefeatedChange()
+                    if (shipManager.level > shipManager.highestLevel) {
+                        shipManager.highestLevel = shipManager.level
+                        onHighestLevelChange(shipManager.highestLevel)
+                        val previousUnlocked = shipManager.getUnlockedShipSets().toList()
+                        shipManager.updateUnlockedShipSets(shipManager.highestLevel, shipManager.starsCollected)
+                        val newUnlocked = shipManager.getUnlockedShipSets().filter { it !in previousUnlocked }
+                        if (newUnlocked.isNotEmpty()) {
+                            gameObjectManager.renderer.showUnlockMessage(newUnlocked.map { "Ship Set ${it + 1}" })
+                        }
                     }
-                    "shield", "speed", "stealth", "invincibility" -> {
-                        powerUpManager.applyPowerUpEffect(powerUp.type, shipManager)
-                        gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, powerUp.type.replaceFirstChar { it.uppercase() }, powerUp.type)
-                    }
-                    "warp" -> {
-                        shipManager.shipX = Random.nextFloat() * (shipManager.screenWidth - 2 * shipManager.maxPartHalfWidth) + shipManager.maxPartHalfWidth
-                        shipManager.shipY = Random.nextFloat() * (shipManager.screenHeight - shipManager.totalShipHeight) + shipManager.totalShipHeight / 2
-                        gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Warp", powerUp.type)
-                        Timber.d("Collected warp power-up")
-                    }
-                    "star" -> {
-                        currentScore += 50
-                        shipManager.starsCollected += 1
-                        onStarsCollectedChange(shipManager.starsCollected)
-                        gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
-                        Timber.d("Collected star power-up, starsCollected=${shipManager.starsCollected}")
-                    }
+                    Timber.d("Boss defeated, level increased to ${shipManager.level}")
                 }
-            },
-            onAsteroidHit = { asteroid ->
-                shipManager.hp -= 10f
-            },
-            onEnemyProjectileHit = { projectile ->
-                shipManager.hp -= 10f
-            },
-            onEnemyShipHit = { enemy ->
-                shipManager.hp -= 25f
+            )
+
+            if (currentTime - lastDistanceUpdateTime >= 1000 && gameObjectManager.getBoss() == null) {
+                sessionDistanceTraveled += shipManager.currentSpeed
+                distanceTraveled += shipManager.currentSpeed
+                onDistanceTraveledChange(distanceTraveled)
+                lastDistanceUpdateTime = currentTime
+                Timber.d("Session distance traveled: $sessionDistanceTraveled, Total distance traveled: $distanceTraveled")
+                val totalDistanceForLevel = distanceTraveled
+                if (totalDistanceForLevel >= distancePerLevel * shipManager.level) {
+                    shipManager.level++
+                    onLevelChange(shipManager.level)
+                    levelUpAnimationStartTime = currentTime
+                    if (shipManager.level > shipManager.highestLevel) {
+                        shipManager.highestLevel = shipManager.level
+                        onHighestLevelChange(shipManager.highestLevel)
+                        val previousUnlocked = shipManager.getUnlockedShipSets().toList()
+                        shipManager.updateUnlockedShipSets(shipManager.highestLevel, shipManager.starsCollected)
+                        val newUnlocked = shipManager.getUnlockedShipSets().filter { it !in previousUnlocked }
+                        if (newUnlocked.isNotEmpty()) {
+                            gameObjectManager.renderer.showUnlockMessage(newUnlocked.map { "Ship Set ${it + 1}" })
+                        }
+                    }
+                    Timber.d("Level advanced to ${shipManager.level} based on total distance traveled: $totalDistanceForLevel")
+                }
             }
-        )
 
-        currentScore += scoreDelta
-        if (newGlowStartTime > 0L) {
-            glowStartTime = newGlowStartTime
-        }
+            if (currentTime - lastScoreUpdateTime >= 1000) {
+                currentScore += 10
+                lastScoreUpdateTime = currentTime
+            }
 
-        // Cleanup game objects
-        gameObjectManager.cleanupGameObjects(shipManager.screenHeight, shipManager.screenWidth)
+            var powerUpCollected: String? = null
+            var fuelHpGained = false
 
-        Timber.d("After cleanup: ${gameObjectManager.powerUps.size} power-ups, ${gameObjectManager.asteroids.size} asteroids, ${gameObjectManager.projectiles.size} projectiles, ${gameObjectManager.enemyShips.size} enemy ships, ${gameObjectManager.enemyProjectiles.size} enemy projectiles, ${gameObjectManager.homingProjectiles.size} homing projectiles, HP: ${shipManager.hp}, Fuel: ${shipManager.fuel}")
+            val (scoreDelta, newGlowStartTime) = collisionManager.checkCollisions(
+                shipX = shipManager.shipX,
+                shipY = shipManager.shipY,
+                maxPartHalfWidth = shipManager.maxPartHalfWidth,
+                totalShipHeight = shipManager.totalShipHeight,
+                stealthActive = powerUpManager.stealthActive,
+                invincibilityActive = powerUpManager.invincibilityActive,
+                powerUps = gameObjectManager.powerUps,
+                asteroids = gameObjectManager.asteroids,
+                projectiles = gameObjectManager.projectiles,
+                enemyShips = gameObjectManager.enemyShips,
+                enemyProjectiles = gameObjectManager.enemyProjectiles,
+                homingProjectiles = gameObjectManager.homingProjectiles,
+                boss = gameObjectManager.getBoss(),
+                onPowerUpCollected = { powerUp ->
+                    powerUpCollected = powerUp.type
+                    when (powerUp.type) {
+                        "power_up" -> {
+                            shipManager.fuel = (shipManager.fuel + 20f).coerceAtMost(shipManager.fuelCapacity)
+                            shipManager.hp = (shipManager.hp + 10f).coerceAtMost(shipManager.maxHp)
+                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Fuel +20", powerUp.type)
+                            Timber.d("Collected power-up: Fuel +20, HP +10")
+                            fuelHpGained = true
+                        }
+                        "shield", "speed", "stealth", "invincibility" -> {
+                            powerUpManager.applyPowerUpEffect(powerUp.type, shipManager)
+                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, powerUp.type.replaceFirstChar { it.uppercase() }, powerUp.type)
+                        }
+                        "warp" -> {
+                            shipManager.shipX = Random.nextFloat() * (shipManager.screenWidth - 2 * shipManager.maxPartHalfWidth) + shipManager.maxPartHalfWidth
+                            shipManager.shipY = Random.nextFloat() * (shipManager.screenHeight - shipManager.totalShipHeight) + shipManager.totalShipHeight / 2
+                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Warp", powerUp.type)
+                            Timber.d("Collected warp power-up")
+                        }
+                        "star" -> {
+                            currentScore += 50
+                            shipManager.starsCollected += 1
+                            onStarsCollectedChange(shipManager.starsCollected)
+                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
+                            Timber.d("Collected star power-up, starsCollected=${shipManager.starsCollected}")
+                        }
+                    }
+                },
+                onAsteroidHit = { asteroid ->
+                    shipManager.hp -= 10f
+                },
+                onEnemyProjectileHit = { projectile ->
+                    shipManager.hp -= 10f
+                },
+                onEnemyShipHit = { enemy ->
+                    shipManager.hp -= 25f
+                }
+            )
 
-        // Check game over condition
-        if (shipManager.fuel <= 0 || shipManager.hp <= 0) {
-            if (continuesUsed < maxContinues) {
-                gameStateManager.setGameState(
-                    GameState.GAME_OVER,
-                    shipManager.screenWidth,
-                    shipManager.screenHeight,
-                    ::resetFlightData,
-                    { _ -> },
-                    userId
-                )
-                gameStateManager.notifyGameOver(
-                    true,
-                    shipManager.reviveCount > 0,
-                    {
-                        continuesUsed++
-                        shipManager.hp = shipManager.maxHp
-                        shipManager.fuel = shipManager.fuelCapacity
-                        gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                        Timber.d("Player continued after ad, continues used: $continuesUsed")
-                    },
-                    {
-                        if (shipManager.reviveCount > 0) {
-                            shipManager.reviveCount--
+            currentScore += scoreDelta
+            if (newGlowStartTime > 0L) {
+                glowStartTime = newGlowStartTime
+            }
+
+            gameObjectManager.cleanupGameObjects(shipManager.screenHeight, shipManager.screenWidth)
+
+            aiAssistant.update(
+                gameState = gameStateManager.gameState,
+                shipX = shipManager.shipX,
+                shipY = shipManager.shipY,
+                asteroids = gameObjectManager.asteroids,
+                enemyShips = gameObjectManager.enemyShips,
+                boss = gameObjectManager.getBoss(),
+                missileCount = shipManager.missileCount,
+                maxMissiles = shipManager.maxMissiles,
+                powerUpCollected = powerUpCollected,
+                fuelHpGained = fuelHpGained,
+                currentTime = currentTime
+            )
+
+            Timber.d("After cleanup: ${gameObjectManager.powerUps.size} power-ups, ${gameObjectManager.asteroids.size} asteroids, ${gameObjectManager.projectiles.size} projectiles, ${gameObjectManager.enemyShips.size} enemy ships, ${gameObjectManager.enemyProjectiles.size} enemy projectiles, ${gameObjectManager.homingProjectiles.size} homing projectiles, HP: ${shipManager.hp}, Fuel: ${shipManager.fuel}, Current Score: $currentScore")
+            Timber.d("update called with userId: $userId, currentScore: $currentScore")
+
+            if (shipManager.fuel <= 0 || shipManager.hp <= 0) {
+                Timber.d("Game over condition met. Fuel: ${shipManager.fuel}, HP: ${shipManager.hp}, Current score: $currentScore, Continues used: $continuesUsed, Revives: ${shipManager.reviveCount}")
+                if (continuesUsed < maxContinues) {
+                    gameStateManager.setGameState(
+                        GameState.GAME_OVER,
+                        shipManager.screenWidth,
+                        shipManager.screenHeight,
+                        ::resetFlightData,
+                        { _ -> },
+                        userId
+                    )
+                    gameStateManager.notifyGameOver(
+                        true,
+                        shipManager.reviveCount > 0,
+                        {
+                            Timber.d("Player chose to continue with ad")
                             continuesUsed++
                             shipManager.hp = shipManager.maxHp
                             shipManager.fuel = shipManager.fuelCapacity
                             gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                            Timber.d("Player used a revive, revives remaining: ${shipManager.reviveCount}, continues used: $continuesUsed")
+                            Timber.d("Player continued after ad, continues used: $continuesUsed")
+                        },
+                        {
+                            if (shipManager.reviveCount > 0) {
+                                Timber.d("Player chose to use revive")
+                                shipManager.reviveCount--
+                                continuesUsed++
+                                shipManager.hp = shipManager.maxHp
+                                shipManager.fuel = shipManager.fuelCapacity
+                                gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                                Timber.d("Player used a revive, revives remaining: ${shipManager.reviveCount}, continues used: $continuesUsed")
+                            } else {
+                                Timber.d("No revives available")
+                            }
+                        },
+                        {
+                            Timber.d("Player chose to return to build, saving score: $currentScore")
+                            saveScore() // Single point of experience saving
+                            gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                            gameObjectManager.clearGameObjects()
+                            powerUpManager.resetPowerUpEffects()
+                            if (distanceTraveled > longestDistanceTraveled) {
+                                longestDistanceTraveled = distanceTraveled
+                                onLongestDistanceTraveledChange(longestDistanceTraveled)
+                            }
+                            if (currentScore > highestScore) {
+                                highestScore = currentScore
+                                onHighestScoreChange(highestScore)
+                            }
+                            distanceTraveled = 0f
+                            onDistanceTraveledChange(distanceTraveled)
+                            currentScore = 0
+                            shipManager.level = 1
+                            onLevelChange(shipManager.level)
+                            shipManager.hp = shipManager.maxHp
+                            shipManager.fuel = 0f
+                            shipManager.missileCount = shipManager.maxMissiles
+                            shipManager.lastMissileRechargeTime = System.currentTimeMillis()
+                            Timber.d("Player declined continue, returned to build screen, score saved")
                         }
-                    },
-                    {
-                        gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                        gameObjectManager.clearGameObjects()
-                        powerUpManager.resetPowerUpEffects()
-                        if (distanceTraveled > longestDistanceTraveled) {
-                            longestDistanceTraveled = distanceTraveled
-                            onLongestDistanceTraveledChange(longestDistanceTraveled)
-                        }
-                        if (currentScore > highestScore) {
-                            highestScore = currentScore
-                            onHighestScoreChange(highestScore)
-                        }
-                        distanceTraveled = 0f
-                        onDistanceTraveledChange(distanceTraveled)
-                        currentScore = 0
-                        shipManager.level = 1
-                        onLevelChange(shipManager.level)
-                        shipManager.hp = shipManager.maxHp
-                        shipManager.fuel = 0f
-                        shipManager.missileCount = shipManager.maxMissiles
-                        shipManager.lastMissileRechargeTime = System.currentTimeMillis()
-                        Timber.d("Player declined continue, returning to build screen")
+                    )
+                } else {
+                    Timber.d("No continues left, forcing return to build with score: $currentScore")
+                    saveScore() // Single point of experience saving
+                    gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                    gameObjectManager.clearGameObjects()
+                    powerUpManager.resetPowerUpEffects()
+                    if (distanceTraveled > longestDistanceTraveled) {
+                        longestDistanceTraveled = distanceTraveled
+                        onLongestDistanceTraveledChange(longestDistanceTraveled)
                     }
-                )
-            } else {
-                gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                gameObjectManager.clearGameObjects()
-                powerUpManager.resetPowerUpEffects()
-                if (distanceTraveled > longestDistanceTraveled) {
-                    longestDistanceTraveled = distanceTraveled
-                    onLongestDistanceTraveledChange(longestDistanceTraveled)
+                    if (currentScore > highestScore) {
+                        highestScore = currentScore
+                        onHighestScoreChange(highestScore)
+                    }
+                    distanceTraveled = 0f
+                    onDistanceTraveledChange(distanceTraveled)
+                    currentScore = 0
+                    shipManager.level = 1
+                    onLevelChange(shipManager.level)
+                    shipManager.hp = shipManager.maxHp
+                    shipManager.fuel = 0f
+                    shipManager.missileCount = shipManager.maxMissiles
+                    shipManager.lastMissileRechargeTime = System.currentTimeMillis()
+                    Timber.d("No more continues available, returned to build screen, score saved")
                 }
-                if (currentScore > highestScore) {
-                    highestScore = currentScore
-                    onHighestScoreChange(highestScore)
-                }
-                distanceTraveled = 0f
-                onDistanceTraveledChange(distanceTraveled)
-                currentScore = 0
-                shipManager.level = 1
-                onLevelChange(shipManager.level)
-                shipManager.hp = shipManager.maxHp
-                shipManager.fuel = 0f
-                shipManager.missileCount = shipManager.maxMissiles
-                shipManager.lastMissileRechargeTime = System.currentTimeMillis()
-                Timber.d("No more continues available, returning to build screen")
             }
+        } catch (e: Exception) {
+            Timber.e(e, "Exception in FlightModeManager.update: ${e.message}")
+            throw e
         }
     }
 
-    private fun resetFlightData() {
+    fun resetFlightData() {
         shipManager.reset()
         gameObjectManager.clearGameObjects()
         powerUpManager.resetPowerUpEffects()
@@ -296,11 +325,25 @@ class FlightModeManager @Inject constructor(
         levelUpAnimationStartTime = 0L
         glowStartTime = 0L
         continuesUsed = 0
+        Timber.d("Flight data reset")
+    }
+
+    fun saveScore() {
+        if (currentScore > 0) {
+            Timber.d("Saving score: $currentScore for userId: $userId")
+            gameEngine.get().addExperience(currentScore)
+            gameEngine.get().savePersistentData(userId) // Explicitly save to Firestore here
+            currentScore = 0 // Reset score after saving to prevent double-saving
+        } else {
+            Timber.d("No score to save: $currentScore")
+        }
     }
 
     fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, userId: String?) {
+        this.userId = userId ?: "default_user"
         shipManager.launchShip(screenWidth, screenHeight, sortedParts)
-        gameStateManager.setGameState(GameState.FLIGHT, screenWidth, screenHeight, ::resetFlightData, { _ -> }, userId)
+        gameStateManager.setGameState(GameState.FLIGHT, screenWidth, screenHeight, ::resetFlightData, { _ -> }, this.userId)
+        Timber.d("launchShip called with userId: $userId")
     }
 
     fun spawnProjectile() {
@@ -330,8 +373,8 @@ class FlightModeManager @Inject constructor(
         shipManager.destroyAllCharges--
         gameObjectManager.asteroids.forEach { asteroid ->
             gameObjectManager.renderer.particleSystem.addExplosionParticles(asteroid.x, asteroid.y)
-            currentScore += FlightModeManager.ASTEROID_DESTROY_POINTS
-            gameObjectManager.renderer.particleSystem.addScoreTextParticle(asteroid.x, asteroid.y, "+${FlightModeManager.ASTEROID_DESTROY_POINTS}")
+            currentScore += ASTEROID_DESTROY_POINTS
+            gameObjectManager.renderer.particleSystem.addScoreTextParticle(asteroid.x, asteroid.y, "+$ASTEROID_DESTROY_POINTS")
         }
         gameObjectManager.enemyShips.forEach { enemy ->
             gameObjectManager.renderer.particleSystem.addExplosionParticles(enemy.x, enemy.y)
@@ -354,6 +397,7 @@ class FlightModeManager @Inject constructor(
     }
 
     fun onDestroy() {
+        Timber.d("FlightModeManager onDestroy called")
         shipManager.onDestroy()
         audioManager.onDestroy()
         gameObjectManager.renderer.onDestroy()

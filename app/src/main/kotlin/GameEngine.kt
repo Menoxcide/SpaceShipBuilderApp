@@ -8,16 +8,20 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class GameEngine @Inject constructor(
     @ApplicationContext private val context: Context,
     val renderer: Renderer,
     private val highscoreManager: HighscoreManager,
-    private val gameStateManager: GameStateManager,
+    val gameStateManager: GameStateManager,
     private val buildModeManager: BuildModeManager,
-    private val flightModeManager: FlightModeManager,
+    val flightModeManager: FlightModeManager,
     private val achievementManager: AchievementManager,
-    private val skillManager: SkillManager // New dependency
+    private val skillManager: SkillManager,
+    val aiAssistant: AIAssistant
 ) {
     private val db = FirebaseFirestore.getInstance()
 
@@ -67,6 +71,11 @@ class GameEngine @Inject constructor(
             if (userId != null) {
                 savePersistentData(userId!!)
             }
+        }
+
+    var experience: Long = 0
+        set(value) {
+            field = value // Removed automatic savePersistentData call to avoid double-saving
         }
 
     var shipColor: String
@@ -275,6 +284,8 @@ class GameEngine @Inject constructor(
 
     private var userId: String? = null
 
+    fun getUserId(): String = userId ?: "default_user"
+
     fun getBoss(): BossShip? = flightModeManager.gameObjectManager.getBoss()
 
     suspend fun loadUserData(userId: String) {
@@ -296,10 +307,11 @@ class GameEngine @Inject constructor(
                 missilesLaunched = doc.getLong("missilesLaunched")?.toInt() ?: 0
                 bossesDefeated = doc.getLong("bossesDefeated")?.toInt() ?: 0
                 skillManager.skillPoints = doc.getLong("skillPoints")?.toInt() ?: 0
+                experience = doc.getLong("experience") ?: 0L
                 val loadedSkills = doc.get("skills") as? Map<String, Long> ?: emptyMap()
                 loadedSkills.forEach { (key, value) -> skillManager.skills[key] = value.toInt() }
                 updateUnlockedShipSets()
-                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, skills=${skillManager.skills}")
+                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, experience=$experience, skills=${skillManager.skills}")
             } else {
                 Timber.d("User data not found for $userId, initializing with defaults")
                 val userData = hashMapOf(
@@ -316,6 +328,7 @@ class GameEngine @Inject constructor(
                     "missilesLaunched" to 0,
                     "bossesDefeated" to 0,
                     "skillPoints" to 0,
+                    "experience" to 0L,
                     "skills" to skillManager.skills
                 )
                 db.collection("users").document(userId).set(userData).await()
@@ -332,6 +345,7 @@ class GameEngine @Inject constructor(
                 missilesLaunched = 0
                 bossesDefeated = 0
                 skillManager.skillPoints = 0
+                experience = 0L
                 skillManager.skills.clear()
                 skillManager.skills.putAll(mapOf(
                     "projectile_damage" to 0, "firing_rate" to 0, "homing_missiles" to 0,
@@ -357,6 +371,7 @@ class GameEngine @Inject constructor(
             missilesLaunched = 0
             bossesDefeated = 0
             skillManager.skillPoints = 0
+            experience = 0L
             skillManager.skills.clear()
             skillManager.skills.putAll(mapOf(
                 "projectile_damage" to 0, "firing_rate" to 0, "homing_missiles" to 0,
@@ -406,7 +421,6 @@ class GameEngine @Inject constructor(
             userId,
             onLevelChange = { newLevel ->
                 level = newLevel
-                skillManager.skillPoints++ // Award 1 skill point per level up
             },
             onHighestLevelChange = { newHighestLevel -> highestLevel = newHighestLevel },
             onHighestScoreChange = { newHighestScore -> highestScore = newHighestScore },
@@ -422,9 +436,7 @@ class GameEngine @Inject constructor(
                 renderer.showUnlockMessage(listOf(achievement.name))
             }
         }
-        if (flightModeManager.shipManager.fuel <= 0 || flightModeManager.shipManager.hp <= 0) {
-            highscoreManager.addScore(userId, playerName, currentScore, level, distanceTraveled)
-        }
+        // Removed experience update here to avoid double-saving; handled in FlightModeManager.saveScore()
     }
 
     fun checkCollision(rect: RectF): Boolean {
@@ -498,7 +510,7 @@ class GameEngine @Inject constructor(
         return skillManager.upgradeSkill(skillId)
     }
 
-    private fun savePersistentData(userId: String) {
+    fun savePersistentData(userId: String) {
         val userData = hashMapOf(
             "level" to level,
             "shipColor" to shipColor,
@@ -513,11 +525,12 @@ class GameEngine @Inject constructor(
             "missilesLaunched" to missilesLaunched,
             "bossesDefeated" to bossesDefeated,
             "skillPoints" to skillManager.skillPoints,
+            "experience" to experience,
             "skills" to skillManager.skills
         )
         db.collection("users").document(userId).set(userData)
-            .addOnSuccessListener { Timber.d("Saved user data for $userId") }
-            .addOnFailureListener { e -> Timber.e(e, "Failed to save user data for $userId") }
+            .addOnSuccessListener { Timber.d("Saved user data for $userId, experience: $experience") }
+            .addOnFailureListener { e -> Timber.e(e, "Failed to save user data for $userId: ${e.message}") }
     }
 
     fun setLaunchListener(listener: (Boolean) -> Unit) {
@@ -525,7 +538,13 @@ class GameEngine @Inject constructor(
     }
 
     fun setGameOverListener(listener: (Boolean, Boolean, () -> Unit, () -> Unit, () -> Unit) -> Unit) {
-        gameStateManager.setGameOverListener(listener)
+        gameStateManager.setGameOverListener { canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild ->
+            Timber.d("Game over listener triggered: canContinue=$canContinue, canUseRevive=$canUseRevive")
+            listener(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive) {
+                onReturnToBuild()
+                // Removed redundant sync here; saving is handled in FlightModeManager
+            }
+        }
     }
 
     fun notifyLaunchListener() {
@@ -533,9 +552,19 @@ class GameEngine @Inject constructor(
     }
 
     fun onDestroy() {
+        Timber.d("GameEngine onDestroy called")
         flightModeManager.onDestroy()
-        if (userId != null) {
+        // Only save if experience hasn't been saved yet (e.g., abrupt termination before BUILD transition)
+        if (userId != null && flightModeManager.currentScore > 0) {
+            experience += flightModeManager.currentScore
             savePersistentData(userId!!)
+            Timber.d("Saved experience on destroy due to unsaved score: $experience")
+            flightModeManager.currentScore = 0 // Reset to prevent double-saving
         }
+    }
+
+    fun addExperience(score: Int) {
+        experience += score
+        Timber.d("Added $score to experience, new total: $experience")
     }
 }

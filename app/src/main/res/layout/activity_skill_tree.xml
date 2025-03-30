@@ -25,6 +25,16 @@
             android:background="@android:color/transparent"/>
 
         <TextView
+            android:id="@+id/experienceText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Experience: 0"
+            android:textSize="18sp"
+            android:textColor="@android:color/white"
+            android:padding="8dp"
+            android:background="@android:color/transparent"/>
+
+        <TextView
             android:id="@+id/bonusesText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -48,6 +58,16 @@
                 android:orientation="vertical"
                 android:background="@android:color/transparent"/>
         </ScrollView>
+
+        <Button
+            android:id="@+id/buySkillPointButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Buy Skill Point (20,000 XP)"
+            android:layout_gravity="center"
+            android:layout_margin="16dp"
+            android:backgroundTint="@android:color/holo_blue_light"
+            android:textColor="@android:color/white"/>
 
         <Button
             android:id="@+id/backButton"
