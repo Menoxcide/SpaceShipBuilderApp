@@ -218,7 +218,10 @@ class FlightModeManager @Inject constructor(
                 maxMissiles = shipManager.maxMissiles,
                 powerUpCollected = powerUpCollected,
                 fuelHpGained = fuelHpGained,
-                currentTime = currentTime
+                currentTime = currentTime,
+                fuel = shipManager.fuel,
+                hp = shipManager.hp,
+                distanceTraveled = distanceTraveled
             )
 
             Timber.d("After cleanup: ${gameObjectManager.powerUps.size} power-ups, ${gameObjectManager.asteroids.size} asteroids, ${gameObjectManager.projectiles.size} projectiles, ${gameObjectManager.enemyShips.size} enemy ships, ${gameObjectManager.enemyProjectiles.size} enemy projectiles, ${gameObjectManager.homingProjectiles.size} homing projectiles, HP: ${shipManager.hp}, Fuel: ${shipManager.fuel}, Current Score: $currentScore")
@@ -261,7 +264,7 @@ class FlightModeManager @Inject constructor(
                         },
                         {
                             Timber.d("Player chose to return to build, saving score: $currentScore")
-                            saveScore() // Single point of experience saving
+                            saveScore()
                             gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
                             gameObjectManager.clearGameObjects()
                             powerUpManager.resetPowerUpEffects()
@@ -287,7 +290,7 @@ class FlightModeManager @Inject constructor(
                     )
                 } else {
                     Timber.d("No continues left, forcing return to build with score: $currentScore")
-                    saveScore() // Single point of experience saving
+                    saveScore()
                     gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
                     gameObjectManager.clearGameObjects()
                     powerUpManager.resetPowerUpEffects()
@@ -332,8 +335,8 @@ class FlightModeManager @Inject constructor(
         if (currentScore > 0) {
             Timber.d("Saving score: $currentScore for userId: $userId")
             gameEngine.get().addExperience(currentScore)
-            gameEngine.get().savePersistentData(userId) // Explicitly save to Firestore here
-            currentScore = 0 // Reset score after saving to prevent double-saving
+            gameEngine.get().savePersistentData(userId)
+            currentScore = 0
         } else {
             Timber.d("No score to save: $currentScore")
         }

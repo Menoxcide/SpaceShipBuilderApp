@@ -75,7 +75,7 @@ class GameEngine @Inject constructor(
 
     var experience: Long = 0
         set(value) {
-            field = value // Removed automatic savePersistentData call to avoid double-saving
+            field = value
         }
 
     var shipColor: String
@@ -419,9 +419,7 @@ class GameEngine @Inject constructor(
         }
         flightModeManager.update(
             userId,
-            onLevelChange = { newLevel ->
-                level = newLevel
-            },
+            onLevelChange = { newLevel -> level = newLevel },
             onHighestLevelChange = { newHighestLevel -> highestLevel = newHighestLevel },
             onHighestScoreChange = { newHighestScore -> highestScore = newHighestScore },
             onStarsCollectedChange = { newStarsCollected -> starsCollected = newStarsCollected },
@@ -436,7 +434,24 @@ class GameEngine @Inject constructor(
                 renderer.showUnlockMessage(listOf(achievement.name))
             }
         }
-        // Removed experience update here to avoid double-saving; handled in FlightModeManager.saveScore()
+
+        // Update AI Assistant with current game state
+        aiAssistant.update(
+            gameState = gameStateManager.gameState,
+            shipX = shipX,
+            shipY = shipY,
+            asteroids = asteroids,
+            enemyShips = enemyShips,
+            boss = getBoss(),
+            missileCount = missileCount,
+            maxMissiles = flightModeManager.shipManager.maxMissiles, // Corrected reference
+            powerUpCollected = null,
+            fuelHpGained = false,
+            currentTime = System.currentTimeMillis(),
+            fuel = fuel,
+            hp = hp,
+            distanceTraveled = distanceTraveled
+        )
     }
 
     fun checkCollision(rect: RectF): Boolean {
@@ -542,7 +557,6 @@ class GameEngine @Inject constructor(
             Timber.d("Game over listener triggered: canContinue=$canContinue, canUseRevive=$canUseRevive")
             listener(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive) {
                 onReturnToBuild()
-                // Removed redundant sync here; saving is handled in FlightModeManager
             }
         }
     }
@@ -554,12 +568,11 @@ class GameEngine @Inject constructor(
     fun onDestroy() {
         Timber.d("GameEngine onDestroy called")
         flightModeManager.onDestroy()
-        // Only save if experience hasn't been saved yet (e.g., abrupt termination before BUILD transition)
         if (userId != null && flightModeManager.currentScore > 0) {
             experience += flightModeManager.currentScore
             savePersistentData(userId!!)
             Timber.d("Saved experience on destroy due to unsaved score: $experience")
-            flightModeManager.currentScore = 0 // Reset to prevent double-saving
+            flightModeManager.currentScore = 0
         }
     }
 

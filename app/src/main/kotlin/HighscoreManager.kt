@@ -6,6 +6,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 import kotlinx.coroutines.tasks.await
+import kotlin.math.min
 
 class HighscoreManager @Inject constructor(
     @ApplicationContext private val context: Context
@@ -22,7 +23,6 @@ class HighscoreManager @Inject constructor(
         try {
             Timber.d("Attempting to load highscores for userId: $userId")
             val snapshot = db.collection("highscores")
-                .whereEqualTo("userId", userId)
                 .orderBy("score", com.google.firebase.firestore.Query.Direction.DESCENDING)
                 .limit(MAX_SCORES.toLong())
                 .get()
@@ -32,7 +32,7 @@ class HighscoreManager @Inject constructor(
             for (doc in snapshot.documents) {
                 highscores.add(
                     ScoreEntry(
-                        doc.getString("userId") ?: userId,
+                        doc.getString("userId") ?: "unknown",
                         doc.getString("name") ?: "Player",
                         doc.getLong("score")?.toInt() ?: 0,
                         doc.getLong("level")?.toInt() ?: 1,
@@ -40,10 +40,9 @@ class HighscoreManager @Inject constructor(
                     )
                 )
             }
-            Timber.d("Loaded ${highscores.size} highscores for user $userId")
+            Timber.d("Loaded ${highscores.size} highscores: ${highscores.joinToString { "${it.name}: ${it.score}" }}")
         } catch (e: Exception) {
             Timber.e(e, "Failed to load highscores: ${e.message}")
-            // Instead of throwing, clear highscores and continue
             highscores.clear()
             Timber.w("Highscores cleared due to Firestore error")
         }
@@ -65,10 +64,10 @@ class HighscoreManager @Inject constructor(
                 if (highscores.size > MAX_SCORES) {
                     highscores.subList(MAX_SCORES, highscores.size).clear()
                 }
-                Timber.d("Added highscore for $userId: score=$score, level=$level, distance=$distance")
+                Timber.d("Added highscore for $userId: score=$score, level=$level, distance=$distance, total highscores: ${highscores.size}")
             }
             .addOnFailureListener { e ->
-                Timber.e(e, "Failed to add highscore for $userId")
+                Timber.e(e, "Failed to add highscore for $userId: ${e.message}")
             }
     }
 
@@ -78,7 +77,7 @@ class HighscoreManager @Inject constructor(
 
     fun getHighscores(page: Int, pageSize: Int = 10): List<ScoreEntry> {
         val start = page * pageSize
-        val end = minOf(start + pageSize, highscores.size)
+        val end = min(start + pageSize, highscores.size)
         return if (start < highscores.size) highscores.subList(start, end) else emptyList()
     }
 

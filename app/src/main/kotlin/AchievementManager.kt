@@ -13,12 +13,12 @@ class AchievementManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val db = FirebaseFirestore.getInstance()
-    private val achievements = mutableMapOf<String, List<AchievementTier>>()
+    private val achievements = mutableListOf<AchievementTier>()
     private var userId: String? = null
 
     data class AchievementTier(
-        val id: String, // e.g., "boss_slayer_1"
-        val name: String, // e.g., "Boss Slayer 1"
+        val id: String, // e.g., "first_flight_i"
+        val name: String, // e.g., "First Flight I"
         val description: String,
         val condition: (level: Int, distanceTraveled: Float, currentScore: Int, starsCollected: Int, missilesLaunched: Int, bossesDefeated: Int) -> Boolean,
         var isUnlocked: Boolean = false,
@@ -30,77 +30,59 @@ class AchievementManager @Inject constructor(
     }
 
     private fun initializeAchievements() {
+        achievements.clear()
+
         // First Flight
-        achievements["first_flight"] = listOf(
-            AchievementTier("first_flight_1", "First Flight 1", "Launch your ship (Distance > 0)", { _, d, _, _, _, _ -> d > 0f }, rewardStars = 5),
-            AchievementTier("first_flight_2", "First Flight 2", "Travel 100 units (Distance >= 100)", { _, d, _, _, _, _ -> d >= 100f }, rewardStars = 10),
-            AchievementTier("first_flight_3", "First Flight 3", "Travel 500 units (Distance >= 500)", { _, d, _, _, _, _ -> d >= 500f }, rewardStars = 15)
-        )
+        achievements.add(AchievementTier("first_flight_i", "First Flight I", "Launch your ship (Distance > 0)", { _, d, _, _, _, _ -> d > 0f }, rewardStars = 5))
+        achievements.add(AchievementTier("first_flight_ii", "First Flight II", "Travel 1000 units (Distance >= 1000)", { _, d, _, _, _, _ -> d >= 1000f }, rewardStars = 15))
+        achievements.add(AchievementTier("first_flight_iii", "First Flight III", "Travel 5000 units (Distance >= 5000)", { _, d, _, _, _, _ -> d >= 5000f }, rewardStars = 30))
 
         // Space Explorer
-        achievements["space_explorer"] = listOf(
-            AchievementTier("space_explorer_1", "Space Explorer 1", "Travel 1000 units (Distance >= 1000)", { _, d, _, _, _, _ -> d >= 1000f }, rewardStars = 10),
-            AchievementTier("space_explorer_2", "Space Explorer 2", "Travel 2500 units (Distance >= 2500)", { _, d, _, _, _, _ -> d >= 2500f }, rewardStars = 20),
-            AchievementTier("space_explorer_3", "Space Explorer 3", "Travel 5000 units (Distance >= 5000)", { _, d, _, _, _, _ -> d >= 5000f }, rewardStars = 30)
-        )
+        achievements.add(AchievementTier("space_explorer_i", "Space Explorer I", "Travel 5000 units (Distance >= 5000)", { _, d, _, _, _, _ -> d >= 5000f }, rewardStars = 20))
+        achievements.add(AchievementTier("space_explorer_ii", "Space Explorer II", "Travel 15000 units (Distance >= 15000)", { _, d, _, _, _, _ -> d >= 15000f }, rewardStars = 40))
+        achievements.add(AchievementTier("space_explorer_iii", "Space Explorer III", "Travel 50000 units (Distance >= 50000)", { _, d, _, _, _, _ -> d >= 50000f }, rewardStars = 75))
 
         // Asteroid Destroyer
-        achievements["asteroid_destroyer"] = listOf(
-            AchievementTier("asteroid_destroyer_1", "Asteroid Destroyer 1", "Destroy 25 asteroids (Score >= 500)", { _, _, s, _, _, _ -> s >= 500 }, rewardStars = 10),
-            AchievementTier("asteroid_destroyer_2", "Asteroid Destroyer 2", "Destroy 50 asteroids (Score >= 1000)", { _, _, s, _, _, _ -> s >= 1000 }, rewardStars = 15),
-            AchievementTier("asteroid_destroyer_3", "Asteroid Destroyer 3", "Destroy 100 asteroids (Score >= 2000)", { _, _, s, _, _, _ -> s >= 2000 }, rewardStars = 25)
-        )
+        achievements.add(AchievementTier("asteroid_destroyer_i", "Asteroid Destroyer I", "Earn 2000 points from asteroids (Score >= 2000)", { _, _, s, _, _, _ -> s >= 2000 }, rewardStars = 20))
+        achievements.add(AchievementTier("asteroid_destroyer_ii", "Asteroid Destroyer II", "Earn 10000 points from asteroids (Score >= 10000)", { _, _, s, _, _, _ -> s >= 10000 }, rewardStars = 40))
+        achievements.add(AchievementTier("asteroid_destroyer_iii", "Asteroid Destroyer III", "Earn 50000 points from asteroids (Score >= 50000)", { _, _, s, _, _, _ -> s >= 50000 }, rewardStars = 75))
 
         // Level Master
-        achievements["level_master"] = listOf(
-            AchievementTier("level_master_1", "Level Master 1", "Reach level 5 (Level >= 5)", { l, _, _, _, _, _ -> l >= 5 }, rewardStars = 10),
-            AchievementTier("level_master_2", "Level Master 2", "Reach level 10 (Level >= 10)", { l, _, _, _, _, _ -> l >= 10 }, rewardStars = 20),
-            AchievementTier("level_master_3", "Level Master 3", "Reach level 20 (Level >= 20)", { l, _, _, _, _, _ -> l >= 20 }, rewardStars = 30)
-        )
+        achievements.add(AchievementTier("level_master_i", "Level Master I", "Reach level 15 (Level >= 15)", { l, _, _, _, _, _ -> l >= 15 }, rewardStars = 25))
+        achievements.add(AchievementTier("level_master_ii", "Level Master II", "Reach level 50 (Level >= 50)", { l, _, _, _, _, _ -> l >= 50 }, rewardStars = 50))
+        achievements.add(AchievementTier("level_master_iii", "Level Master III", "Reach level 100 (Level >= 100)", { l, _, _, _, _, _ -> l >= 100 }, rewardStars = 100))
 
         // Star Collector
-        achievements["star_collector"] = listOf(
-            AchievementTier("star_collector_1", "Star Collector 1", "Collect 25 stars (Stars >= 25)", { _, _, _, s, _, _ -> s >= 25 }, rewardStars = 15),
-            AchievementTier("star_collector_2", "Star Collector 2", "Collect 50 stars (Stars >= 50)", { _, _, _, s, _, _ -> s >= 50 }, rewardStars = 25),
-            AchievementTier("star_collector_3", "Star Collector 3", "Collect 100 stars (Stars >= 100)", { _, _, _, s, _, _ -> s >= 100 }, rewardStars = 40)
-        )
+        achievements.add(AchievementTier("star_collector_i", "Star Collector I", "Collect 75 stars (Stars >= 75)", { _, _, _, s, _, _ -> s >= 75 }, rewardStars = 25))
+        achievements.add(AchievementTier("star_collector_ii", "Star Collector II", "Collect 500 stars (Stars >= 500)", { _, _, _, s, _, _ -> s >= 500 }, rewardStars = 60))
+        achievements.add(AchievementTier("star_collector_iii", "Star Collector III", "Collect 2000 stars (Stars >= 2000)", { _, _, _, s, _, _ -> s >= 2000 }, rewardStars = 150))
 
         // Galactic Voyager
-        achievements["galactic_voyager"] = listOf(
-            AchievementTier("galactic_voyager_1", "Galactic Voyager 1", "Travel 2000 units total (Distance >= 2000)", { _, d, _, _, _, _ -> d >= 2000f }, rewardStars = 15),
-            AchievementTier("galactic_voyager_2", "Galactic Voyager 2", "Travel 5000 units total (Distance >= 5000)", { _, d, _, _, _, _ -> d >= 5000f }, rewardStars = 30),
-            AchievementTier("galactic_voyager_3", "Galactic Voyager 3", "Travel 10000 units total (Distance >= 10000)", { _, d, _, _, _, _ -> d >= 10000f }, rewardStars = 50)
-        )
+        achievements.add(AchievementTier("galactic_voyager_i", "Galactic Voyager I", "Travel 10000 units total (Distance >= 10000)", { _, d, _, _, _, _ -> d >= 10000f }, rewardStars = 30))
+        achievements.add(AchievementTier("galactic_voyager_ii", "Galactic Voyager II", "Travel 30000 units total (Distance >= 30000)", { _, d, _, _, _, _ -> d >= 30000f }, rewardStars = 60))
+        achievements.add(AchievementTier("galactic_voyager_iii", "Galactic Voyager III", "Travel 100000 units total (Distance >= 100000)", { _, d, _, _, _, _ -> d >= 100000f }, rewardStars = 125))
 
         // Missile Maniac
-        achievements["missile_maniac"] = listOf(
-            AchievementTier("missile_maniac_1", "Missile Maniac 1", "Launch 25 missiles (Missiles >= 25)", { _, _, _, _, m, _ -> m >= 25 }, rewardStars = 10),
-            AchievementTier("missile_maniac_2", "Missile Maniac 2", "Launch 50 missiles (Missiles >= 50)", { _, _, _, _, m, _ -> m >= 50 }, rewardStars = 20),
-            AchievementTier("missile_maniac_3", "Missile Maniac 3", "Launch 100 missiles (Missiles >= 100)", { _, _, _, _, m, _ -> m >= 100 }, rewardStars = 35)
-        )
+        achievements.add(AchievementTier("missile_maniac_i", "Missile Maniac I", "Launch 75 missiles (Missiles >= 75)", { _, _, _, _, m, _ -> m >= 75 }, rewardStars = 25))
+        achievements.add(AchievementTier("missile_maniac_ii", "Missile Maniac II", "Launch 300 missiles (Missiles >= 300)", { _, _, _, _, m, _ -> m >= 300 }, rewardStars = 50))
+        achievements.add(AchievementTier("missile_maniac_iii", "Missile Maniac III", "Launch 1000 missiles (Missiles >= 1000)", { _, _, _, _, m, _ -> m >= 1000 }, rewardStars = 100))
 
         // Boss Slayer
-        achievements["boss_slayer"] = listOf(
-            AchievementTier("boss_slayer_1", "Boss Slayer 1", "Defeat 1 boss (Bosses >= 1)", { _, _, _, _, _, b -> b >= 1 }, rewardStars = 15),
-            AchievementTier("boss_slayer_2", "Boss Slayer 2", "Defeat 5 bosses (Bosses >= 5)", { _, _, _, _, _, b -> b >= 5 }, rewardStars = 35),
-            AchievementTier("boss_slayer_3", "Boss Slayer 3", "Defeat 10 bosses (Bosses >= 10)", { _, _, _, _, _, b -> b >= 10 }, rewardStars = 60)
-        )
+        achievements.add(AchievementTier("boss_slayer_i", "Boss Slayer I", "Defeat 5 bosses (Bosses >= 5)", { _, _, _, _, _, b -> b >= 5 }, rewardStars = 30))
+        achievements.add(AchievementTier("boss_slayer_ii", "Boss Slayer II", "Defeat 25 bosses (Bosses >= 25)", { _, _, _, _, _, b -> b >= 25 }, rewardStars = 60))
+        achievements.add(AchievementTier("boss_slayer_iii", "Boss Slayer III", "Defeat 100 bosses (Bosses >= 100)", { _, _, _, _, _, b -> b >= 100 }, rewardStars = 150))
 
         // Survivor
-        achievements["survivor"] = listOf(
-            AchievementTier("survivor_1", "Survivor 1", "Reach level 10 (Level >= 10)", { l, _, _, _, _, _ -> l >= 10 }, rewardStars = 20),
-            AchievementTier("survivor_2", "Survivor 2", "Reach level 20 (Level >= 20)", { l, _, _, _, _, _ -> l >= 20 }, rewardStars = 40),
-            AchievementTier("survivor_3", "Survivor 3", "Reach level 30 (Level >= 30)", { l, _, _, _, _, _ -> l >= 30 }, rewardStars = 60)
-        )
+        achievements.add(AchievementTier("survivor_i", "Survivor I", "Reach level 25 (Level >= 25)", { l, _, _, _, _, _ -> l >= 25 }, rewardStars = 35))
+        achievements.add(AchievementTier("survivor_ii", "Survivor II", "Reach level 75 (Level >= 75)", { l, _, _, _, _, _ -> l >= 75 }, rewardStars = 70))
+        achievements.add(AchievementTier("survivor_iii", "Survivor III", "Reach level 150 (Level >= 150)", { l, _, _, _, _, _ -> l >= 150 }, rewardStars = 125))
 
         // Stellar Hoarder
-        achievements["stellar_hoarder"] = listOf(
-            AchievementTier("stellar_hoarder_1", "Stellar Hoarder 1", "Collect 50 stars (Stars >= 50)", { _, _, _, s, _, _ -> s >= 50 }, rewardStars = 25),
-            AchievementTier("stellar_hoarder_2", "Stellar Hoarder 2", "Collect 100 stars (Stars >= 100)", { _, _, _, s, _, _ -> s >= 100 }, rewardStars = 50),
-            AchievementTier("stellar_hoarder_3", "Stellar Hoarder 3", "Collect 200 stars (Stars >= 200)", { _, _, _, s, _, _ -> s >= 200 }, rewardStars = 75)
-        )
+        achievements.add(AchievementTier("stellar_hoarder_i", "Stellar Hoarder I", "Collect 150 stars (Stars >= 150)", { _, _, _, s, _, _ -> s >= 150 }, rewardStars = 35))
+        achievements.add(AchievementTier("stellar_hoarder_ii", "Stellar Hoarder II", "Collect 1000 stars (Stars >= 1000)", { _, _, _, s, _, _ -> s >= 1000 }, rewardStars = 75))
+        achievements.add(AchievementTier("stellar_hoarder_iii", "Stellar Hoarder III", "Collect 5000 stars (Stars >= 5000)", { _, _, _, s, _, _ -> s >= 5000 }, rewardStars = 200))
 
-        Timber.d("Initialized ${achievements.size} achievement types with ${achievements.values.sumOf { it.size }} tiers")
+        Timber.d("Initialized ${achievements.size} individual achievements")
     }
 
     suspend fun loadAchievements(userId: String) {
@@ -112,9 +94,9 @@ class AchievementManager @Inject constructor(
             for (doc in snapshot.documents) {
                 val id = doc.id
                 val isUnlocked = doc.getBoolean("isUnlocked") ?: false
-                achievements.values.flatten().find { it.id == id }?.isUnlocked = isUnlocked
+                achievements.find { it.id == id }?.isUnlocked = isUnlocked
             }
-            Timber.d("Loaded achievements for $userId: ${achievements.values.flatten().filter { it.isUnlocked }.map { it.id }}")
+            Timber.d("Loaded achievements for $userId: ${achievements.filter { it.isUnlocked }.map { it.id }}")
         } catch (e: Exception) {
             Timber.e(e, "Failed to load achievements: ${e.message}")
         }
@@ -129,21 +111,32 @@ class AchievementManager @Inject constructor(
         bossesDefeated: Int
     ): List<AchievementTier> {
         val newlyUnlocked = mutableListOf<AchievementTier>()
-        achievements.values.forEach { tiers ->
-            tiers.forEach { tier ->
-                if (!tier.isUnlocked && tier.condition(level, distanceTraveled, currentScore, starsCollected, missilesLaunched, bossesDefeated)) {
-                    // Check if previous tier is unlocked (if applicable)
-                    val tierIndex = tiers.indexOf(tier)
-                    if (tierIndex == 0 || tiers[tierIndex - 1].isUnlocked) {
-                        tier.isUnlocked = true
-                        newlyUnlocked.add(tier)
-                        saveAchievement(tier)
-                        Timber.d("Unlocked achievement: ${tier.name}, rewarded ${tier.rewardStars} stars")
-                    }
-                }
+        achievements.forEach { tier ->
+            if (!tier.isUnlocked && isPreviousTierUnlocked(tier) && tier.condition(level, distanceTraveled, currentScore, starsCollected, missilesLaunched, bossesDefeated)) {
+                tier.isUnlocked = true
+                newlyUnlocked.add(tier)
+                saveAchievement(tier)
+                Timber.d("Unlocked achievement: ${tier.name}, rewarded ${tier.rewardStars} stars")
             }
         }
         return newlyUnlocked
+    }
+
+    fun isPreviousTierUnlocked(tier: AchievementTier): Boolean {
+        val tierNumber = when {
+            tier.id.endsWith("_i") -> 1
+            tier.id.endsWith("_ii") -> 2
+            tier.id.endsWith("_iii") -> 3
+            else -> return true // Shouldn't happen with current structure
+        }
+        if (tierNumber == 1) return true // Tier I has no previous tier
+        val baseId = tier.id.substringBeforeLast("_")
+        val previousTierId = when (tierNumber) {
+            2 -> "${baseId}_i"
+            3 -> "${baseId}_ii"
+            else -> return true
+        }
+        return achievements.find { it.id == previousTierId }?.isUnlocked ?: false
     }
 
     private fun saveAchievement(tier: AchievementTier) {
@@ -162,11 +155,11 @@ class AchievementManager @Inject constructor(
     }
 
     fun getUnlockedAchievements(): List<AchievementTier> {
-        return achievements.values.flatten().filter { it.isUnlocked }
+        return achievements.filter { it.isUnlocked }
     }
 
     fun getAllAchievements(): List<AchievementTier> {
-        return achievements.values.flatten()
+        return achievements.toList()
     }
 
     fun getRewardStars(tier: AchievementTier): Int {

@@ -8,6 +8,9 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -28,7 +31,19 @@ class LeaderboardActivity : AppCompatActivity() {
         val prevButton = findViewById<Button>(R.id.prevButton)
         val nextButton = findViewById<Button>(R.id.nextButton)
 
-        updateLeaderboardEntries()
+        // Get userId from intent or default to "default_user" (adjust based on your app's user management)
+        val userId = intent.getStringExtra("userId") ?: "default_user"
+
+        // Load highscores asynchronously and update UI when done
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                highscoreManager.initialize(userId)
+                updateLeaderboardEntries()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize highscore manager: ${e.message}")
+                // Optionally show an error message to the user
+            }
+        }
 
         prevButton.setOnClickListener {
             if (currentPage > 0) {
@@ -62,37 +77,48 @@ class LeaderboardActivity : AppCompatActivity() {
         findViewById<Button>(R.id.prevButton).isEnabled = currentPage > 0
         findViewById<Button>(R.id.nextButton).isEnabled = currentPage < totalPages - 1
 
-        scores.forEachIndexed { index, entry ->
-            val position = currentPage * pageSize + index + 1
-            val entryLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, 0, 0, 8)
-            }
-
-            // Add icon based on position
-            val iconResId = when (position) {
-                1 -> R.drawable.ic_trophy_gold
-                2 -> R.drawable.ic_trophy_silver
-                3 -> R.drawable.ic_trophy_bronze
-                else -> R.drawable.ic_trophy_default
-            }
-            val iconView = ImageView(this).apply {
-                setImageResource(iconResId)
-                layoutParams = LinearLayout.LayoutParams(48, 48).apply {
-                    setMargins(0, 0, 8, 0)
-                }
-            }
-            entryLayout.addView(iconView)
-
-            // Add entry text
-            val entryText = TextView(this).apply {
-                text = "$position. ${entry.name}: Score: ${entry.score}, Level: ${entry.level}, Distance: ${entry.distance.toInt()}"
+        if (scores.isEmpty()) {
+            val noScoresText = TextView(this).apply {
+                text = "No highscores available yet."
                 textSize = 16f
                 setTextColor(ContextCompat.getColor(this@LeaderboardActivity, android.R.color.white))
+                setPadding(0, 0, 0, 8)
             }
-            entryLayout.addView(entryText)
+            entriesContainer.addView(noScoresText)
+        } else {
+            scores.forEachIndexed { index, entry ->
+                val position = currentPage * pageSize + index + 1
+                val entryLayout = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, 0, 0, 8)
+                }
 
-            entriesContainer.addView(entryLayout)
+                // Add icon based on position
+                val iconResId = when (position) {
+                    1 -> R.drawable.ic_trophy_gold
+                    2 -> R.drawable.ic_trophy_silver
+                    3 -> R.drawable.ic_trophy_bronze
+                    else -> R.drawable.ic_trophy_default
+                }
+                val iconView = ImageView(this).apply {
+                    setImageResource(iconResId)
+                    layoutParams = LinearLayout.LayoutParams(48, 48).apply {
+                        setMargins(0, 0, 8, 0)
+                    }
+                }
+                entryLayout.addView(iconView)
+
+                // Add entry text
+                val entryText = TextView(this).apply {
+                    text = "$position. ${entry.name}: Score: ${entry.score}, Level: ${entry.level}, Distance: ${entry.distance.toInt()}"
+                    textSize = 16f
+                    setTextColor(ContextCompat.getColor(this@LeaderboardActivity, android.R.color.white))
+                }
+                entryLayout.addView(entryText)
+
+                entriesContainer.addView(entryLayout)
+            }
         }
+        Timber.d("Updated leaderboard with ${scores.size} entries for page $currentPage")
     }
 }

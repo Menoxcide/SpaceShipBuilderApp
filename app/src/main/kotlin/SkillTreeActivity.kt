@@ -75,6 +75,8 @@ class SkillTreeActivity : AppCompatActivity() {
                 CoroutineScope(Dispatchers.Main).launch {
                     gameEngine.savePersistentData(gameEngine.getUserId())
                 }
+                // Refresh skill tree to update button states
+                populateSkillTree()
             } else {
                 Toast.makeText(this, "Not enough experience! Need 20,000 XP.", Toast.LENGTH_SHORT).show()
             }
@@ -100,7 +102,6 @@ class SkillTreeActivity : AppCompatActivity() {
     private fun updateBonusesDisplay() {
         val bonuses = mutableListOf<String>()
         val skills = skillManager.skills
-        val maxLevels = skillManager.skillMaxLevels
 
         val projectileDamageLevel = skills["projectile_damage"] ?: 0
         if (projectileDamageLevel > 0) {
@@ -203,22 +204,40 @@ class SkillTreeActivity : AppCompatActivity() {
 
                 val currentLevel = skillManager.skills[skillId] ?: 0
                 val maxLevel = skillManager.skillMaxLevels[skillId] ?: 3
-                val cost = skillManager.skillCosts[skillId] ?: 1
+                val cost = if (currentLevel < maxLevel) skillManager.getUpgradeCost(skillId) else 0
 
                 val descriptionLayout = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, 0, 0, 0)
                 }
 
                 val descriptionText = TextView(this).apply {
-                    text = "${descriptions[skillId]}\nLevel: $currentLevel/$maxLevel\nCost: $cost Skill Point${if (cost > 1) "s" else ""}"
+                    val fullText = "${descriptions[skillId]}\nLevel: $currentLevel/$maxLevel\nCost: ${if (currentLevel < maxLevel) "$cost Skill Point${if (cost > 1) "s" else ""}" else "Maxed"}"
+                    text = fullText
                     textSize = 14f
                     setTextColor(ContextCompat.getColor(this@SkillTreeActivity, android.R.color.white))
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        weight = 1f
+                        setMargins(0, 0, 8, 0) // Add margin to separate from button
+                    }
+                    setMinLines(3) // Ensure space for 3 lines
+                    maxLines = 3
+                    ellipsize = null
+                    Timber.d("Setting description for $skillId: $fullText")
                 }
 
                 val upgradeButton = Button(this).apply {
                     text = if (currentLevel >= maxLevel) "MAX" else "UPGRADE"
                     isEnabled = currentLevel < maxLevel && skillManager.skillPoints >= cost
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        width = 150 // Fixed width to prevent squeezing descriptionText
+                    }
                     setBackgroundTintList(ContextCompat.getColorStateList(
                         this@SkillTreeActivity,
                         if (currentLevel >= maxLevel) android.R.color.holo_green_dark
@@ -236,6 +255,8 @@ class SkillTreeActivity : AppCompatActivity() {
                             CoroutineScope(Dispatchers.Main).launch {
                                 gameEngine.savePersistentData(gameEngine.getUserId())
                             }
+                        } else {
+                            Toast.makeText(this@SkillTreeActivity, "Not enough skill points!", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -269,9 +290,11 @@ class SkillTreeActivity : AppCompatActivity() {
         val viewHolder = skillViews[skillId] ?: return
         val currentLevel = skillManager.skills[skillId] ?: 0
         val maxLevel = skillManager.skillMaxLevels[skillId] ?: 3
-        val cost = skillManager.skillCosts[skillId] ?: 1
+        val cost = if (currentLevel < maxLevel) skillManager.getUpgradeCost(skillId) else 0
 
-        viewHolder.descriptionText.text = "${viewHolder.descriptionText.text.split("\n")[0]}\nLevel: $currentLevel/$maxLevel\nCost: $cost Skill Point${if (cost > 1) "s" else ""}"
+        val fullText = "${viewHolder.descriptionText.text.split("\n")[0]}\nLevel: $currentLevel/$maxLevel\nCost: ${if (currentLevel < maxLevel) "$cost Skill Point${if (cost > 1) "s" else ""}" else "Maxed"}"
+        viewHolder.descriptionText.text = fullText
+        Timber.d("Updating description for $skillId: $fullText")
         viewHolder.progressBar.progress = currentLevel * 100
         viewHolder.upgradeButton.text = if (currentLevel >= maxLevel) "MAX" else "UPGRADE"
         viewHolder.upgradeButton.isEnabled = currentLevel < maxLevel && skillManager.skillPoints >= cost

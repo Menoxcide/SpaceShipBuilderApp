@@ -1,25 +1,14 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.Rect
-import android.graphics.RectF
-import android.graphics.Shader
-import android.graphics.Typeface
-import androidx.core.graphics.createBitmap
-import androidx.core.graphics.withRotation
-import androidx.core.graphics.withSave
-import androidx.core.graphics.withTranslation
+import android.graphics.*
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.text.Layout
+import android.text.StaticLayout.Builder
 import timber.log.Timber
 import javax.inject.Inject
+import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -122,12 +111,8 @@ class Renderer @Inject constructor(
             Shader.TileMode.CLAMP
         )
     }
-    private val starPaint = Paint().apply {
-        isAntiAlias = true
-    }
-    private val hologramPaint = Paint().apply {
-        color = Color.argb(100, 0, 255, 0)
-    }
+    private val starPaint = Paint().apply { isAntiAlias = true }
+    private val hologramPaint = Paint().apply { color = Color.argb(100, 0, 255, 0) }
     private val graffitiPaint = Paint().apply {
         isAntiAlias = true
         textSize = 40f
@@ -137,13 +122,8 @@ class Renderer @Inject constructor(
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
-    private val powerUpPaint = Paint().apply {
-        isAntiAlias = true
-    }
-    private val asteroidPaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.RED
-    }
+    private val powerUpPaint = Paint().apply { isAntiAlias = true }
+    private val asteroidPaint = Paint().apply { isAntiAlias = true; color = Color.RED }
     private val hpBarPaint = Paint().apply {
         isAntiAlias = true
         color = Color.GREEN
@@ -240,16 +220,9 @@ class Renderer @Inject constructor(
         strokeCap = Paint.Cap.ROUND
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
-    private val shipTintPaint = Paint().apply {
-        isAntiAlias = true
-    }
-    private val projectilePaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.WHITE
-    }
-    private val enemyProjectilePaint = Paint().apply {
-        isAntiAlias = true
-    }
+    private val shipTintPaint = Paint().apply { isAntiAlias = true }
+    private val projectilePaint = Paint().apply { isAntiAlias = true; color = Color.WHITE }
+    private val enemyProjectilePaint = Paint().apply { isAntiAlias = true }
     private val scoreTextPaint = Paint().apply {
         isAntiAlias = true
         textSize = 30f
@@ -263,10 +236,7 @@ class Renderer @Inject constructor(
         strokeWidth = 4f
         setShadowLayer(8f, 0f, 0f, Color.RED)
     }
-    private val bossPaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.RED
-    }
+    private val bossPaint = Paint().apply { isAntiAlias = true; color = Color.RED }
     private val bossHpBarPaint = Paint().apply {
         isAntiAlias = true
         style = Paint.Style.FILL
@@ -280,23 +250,34 @@ class Renderer @Inject constructor(
         setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
     private val homingProjectilePaint = Paint().apply { isAntiAlias = true }
-    private val missileIndicatorPaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.YELLOW
-    }
-    private val aiMessagePaint = Paint().apply {
+    private val missileIndicatorPaint = Paint().apply { isAntiAlias = true; color = Color.YELLOW }
+
+    // AI Assistant rendering paints
+    private val aiMessagePaint = TextPaint().apply {
         isAntiAlias = true
         textSize = 40f
-        color = Color.WHITE
-        textAlign = Paint.Align.LEFT
+        color = Color.CYAN
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
     }
+    private val aiOverlayPaint = Paint().apply {
+        color = Color.argb(180, 0, 0, 0)
+        style = Paint.Style.FILL
+    }
+    private val aiPulsePaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.argb(100, 0, 255, 255)
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    private var animationTime: Long = 0L
+
     private var unlockMessage: String? = null
     private var unlockMessageStartTime: Long = 0L
     private val unlockMessageDuration = 5000L
 
     private fun createPlaceholderBitmap(original: Bitmap): Bitmap {
-        return createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
+        return Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
             Canvas(this).apply {
                 drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
                 hologramPaint.alpha = 128
@@ -341,6 +322,7 @@ class Renderer @Inject constructor(
 
     fun updateAnimationFrame() {
         animationFrame = (animationFrame + 0.05f) % (2 * Math.PI.toFloat())
+        animationTime = System.currentTimeMillis()
     }
 
     fun showUnlockMessage(messages: List<String>) {
@@ -398,14 +380,12 @@ class Renderer @Inject constructor(
         parts.forEach { part ->
             val x = part.x - (part.bitmap.width * part.scale / 2f)
             val y = part.y - (part.bitmap.height * part.scale / 2f)
-            canvas.withSave {
-                withTranslation(part.x, part.y) {
-                    withRotation(part.rotation, part.bitmap.width * part.scale / 2f, part.bitmap.height * part.scale / 2f) {
-                        scale(part.scale, part.scale, part.bitmap.width / 2f, part.bitmap.height / 2f)
-                        drawBitmap(part.bitmap, -part.bitmap.width / 2f, -part.bitmap.height / 2f, null)
-                    }
-                }
-            }
+            canvas.save()
+            canvas.translate(part.x, part.y)
+            canvas.rotate(part.rotation, part.bitmap.width * part.scale / 2f, part.bitmap.height * part.scale / 2f)
+            canvas.scale(part.scale, part.scale, part.bitmap.width / 2f, part.bitmap.height / 2f)
+            canvas.drawBitmap(part.bitmap, -part.bitmap.width / 2f, -part.bitmap.height / 2f, null)
+            canvas.restore()
         }
     }
 
@@ -413,10 +393,10 @@ class Renderer @Inject constructor(
         placeholders.forEach { part ->
             val x = part.x - (part.bitmap.width * part.scale / 2f)
             val y = part.y - (part.bitmap.height * part.scale / 2f)
-            canvas.withSave {
-                scale(part.scale, part.scale, part.x, part.y)
-                drawBitmap(part.bitmap, x, y, hologramPaint)
-            }
+            canvas.save()
+            canvas.scale(part.scale, part.scale, part.x, part.y)
+            canvas.drawBitmap(part.bitmap, x, y, hologramPaint)
+            canvas.restore()
         }
     }
 
@@ -523,14 +503,12 @@ class Renderer @Inject constructor(
                 val targetY = placeholderPositions[part.type] ?: part.y
                 val xOffset = (part.bitmap.width * part.scale / 2f)
                 val yOffset = (part.bitmap.height * part.scale / 2f)
-                canvas.withSave {
-                    withTranslation(shipX, targetY) {
-                        withRotation(part.rotation, xOffset, yOffset) {
-                            scale(part.scale, part.scale, xOffset, yOffset)
-                            drawBitmap(part.bitmap, -xOffset, -yOffset, shipTintPaint)
-                        }
-                    }
-                }
+                canvas.save()
+                canvas.translate(shipX, targetY)
+                canvas.rotate(part.rotation, xOffset, yOffset)
+                canvas.scale(part.scale, part.scale, xOffset, yOffset)
+                canvas.drawBitmap(part.bitmap, -xOffset, -yOffset, shipTintPaint)
+                canvas.restore()
                 if (part.type == "engine") {
                     particleSystem.addPropulsionParticles(shipX, targetY + (part.bitmap.height * part.scale))
                 }
@@ -634,11 +612,11 @@ class Renderer @Inject constructor(
                 (asteroid.size * 2).toInt(),
                 true
             )
-            canvas.withSave {
-                translate(x + asteroid.size, y)
-                rotate(asteroid.rotation * (180f / Math.PI.toFloat()))
-                drawBitmap(scaledBitmap, -asteroid.size, -asteroid.size, asteroidPaint)
-            }
+            canvas.save()
+            canvas.translate(x + asteroid.size, y)
+            canvas.rotate(asteroid.rotation * (180f / Math.PI.toFloat()))
+            canvas.drawBitmap(scaledBitmap, -asteroid.size, -asteroid.size, asteroidPaint)
+            canvas.restore()
             if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}")
         }
     }
@@ -792,15 +770,64 @@ class Renderer @Inject constructor(
 
     private fun drawAIMessages(canvas: Canvas, aiAssistant: AIAssistant, statusBarHeight: Float) {
         val messages = aiAssistant.getDisplayedMessages()
-        val startX = 20f
-        val startY = statusBarHeight + 50f
-        val lineHeight = 50f
+        if (messages.isEmpty()) return
+
+        val padding = 20f
+        val bottomMargin = 50f
+        val maxWidth = (screenWidth * 0.8f).toInt() // Max width for text wrapping
 
         messages.forEachIndexed { index, message ->
-            canvas.drawText(message, startX, startY + index * lineHeight, aiMessagePaint)
-        }
-        if (BuildConfig.DEBUG && messages.isNotEmpty()) {
-            Timber.d("Drawing ${messages.size} AI messages: ${messages.joinToString(", ")}")
+            // Create a StaticLayout with Builder to ensure proper wrapping
+            val staticLayout = Builder.obtain(
+                message,
+                0,
+                message.length,
+                aiMessagePaint,
+                maxWidth
+            )
+                .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                .setLineSpacing(0.0f, 1.0f)
+                .setIncludePad(false)
+                .build()
+
+            // Calculate dimensions based on wrapped text
+            val textWidth = staticLayout.getLineWidth(0).toFloat() // Width of the widest line
+            val lineCount = staticLayout.lineCount
+            val textHeight = staticLayout.height.toFloat()
+            val overlayWidth = min(textWidth + 2 * padding, maxWidth.toFloat())
+            val overlayHeight = textHeight + 2 * padding
+            val overlayX = (screenWidth - overlayWidth) / 2f
+            val overlayY = screenHeight - bottomMargin - overlayHeight - (index * (overlayHeight + padding))
+
+            // Draw overlay
+            canvas.drawRect(
+                overlayX,
+                overlayY,
+                overlayX + overlayWidth,
+                overlayY + overlayHeight,
+                aiOverlayPaint
+            )
+
+            // Pulsing effect
+            val pulse = (sin(animationTime / 500f) + 1) / 2
+            aiPulsePaint.alpha = (pulse * 100).toInt() + 50
+            canvas.drawRect(
+                overlayX,
+                overlayY,
+                overlayX + overlayWidth,
+                overlayY + overlayHeight,
+                aiPulsePaint
+            )
+
+            // Draw wrapped text
+            canvas.save()
+            canvas.translate(overlayX + padding, overlayY + padding)
+            staticLayout.draw(canvas)
+            canvas.restore()
+
+            if (BuildConfig.DEBUG) {
+                Timber.d("Drawing AI message '$message' at (x=$overlayX, y=$overlayY) with width=$overlayWidth, height=$overlayHeight, lines=$lineCount")
+            }
         }
     }
 
