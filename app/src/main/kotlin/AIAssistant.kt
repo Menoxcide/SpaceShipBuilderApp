@@ -11,6 +11,7 @@ class AIAssistant @Inject constructor() {
     private val displayedMessages = mutableListOf<Pair<String, Long>>()
     private val messageDisplayDuration = 5000L // 5 seconds for reading time
     private val maxDisplayedMessages = 3
+    private val bottomOffset = 100f // Offset to avoid overlap with destroy all button
 
     // AI "Memory" and State
     private data class PlayerMemory(
@@ -369,5 +370,9 @@ class AIAssistant @Inject constructor() {
 
     fun getDisplayedMessages(): List<String> {
         return displayedMessages.map { it.first }
+    }
+
+    fun getBottomOffset(): Float {
+        return bottomOffset
     }
 }

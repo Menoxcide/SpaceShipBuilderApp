@@ -195,8 +195,6 @@ class MainActivity : AppCompatActivity() {
         handler.post(animationRunnable)
         requestAudioPermission()
 
-        binding.flightView.setDestroyAllButton(binding.destroyAllButton)
-
         val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 val width = binding.flightView.width.toFloat()
@@ -274,6 +272,9 @@ class MainActivity : AppCompatActivity() {
                 binding.flightView.isEnabled = isLaunching
                 binding.playerNameInput.isVisible = false
                 binding.navigationButtons.isVisible = !isLaunching
+                binding.pauseButton.isVisible = isLaunching
+                binding.destroyAllButton.isVisible = isLaunching && gameEngine.destroyAllCharges > 0
+                binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
                 if (isLaunching) {
                     binding.flightView.requestFocus()
                     binding.flightView.setGameMode(GameState.FLIGHT)
@@ -282,7 +283,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     if (gameEngine.flightModeManager.currentScore > 0) {
                         Timber.d("Saving score ${gameEngine.flightModeManager.currentScore} before switching to build mode")
-                        gameEngine.flightModeManager.onDestroy() // Save score on manual exit
+                        gameEngine.flightModeManager.saveScore()
                     }
                     binding.buildView.setOnTouchListener(placedPartTouchListener)
                     binding.flightView.setGameMode(GameState.BUILD)
@@ -413,10 +414,10 @@ class MainActivity : AppCompatActivity() {
             val useReviveButton = dialog.findViewById<Button>(R.id.useReviveButton)
             val returnButton = dialog.findViewById<Button>(R.id.returnButton)
 
-            messageText.text = "Game Over! Continue?"
-            watchAdButton.text = "Watch Ad"
-            useReviveButton.text = "Use Revive (${gameEngine.reviveCount}/3)"
-            returnButton.text = "Back to Build"
+            messageText.setText("Game Over! Continue?")
+            watchAdButton.setText("Watch Ad")
+            useReviveButton.setText("Use Revive (${gameEngine.reviveCount}/3)")
+            returnButton.setText("Back to Build")
 
             watchAdButton.visibility = if (canContinueWithAd) View.VISIBLE else View.GONE
             useReviveButton.visibility = if (canUseRevive) View.VISIBLE else View.GONE
@@ -520,6 +521,27 @@ class MainActivity : AppCompatActivity() {
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
+        binding.pauseButton.setOnClickListener {
+            Timber.d("Pause button clicked, returning to build mode")
+            gameStateManager.setGameState(
+                GameState.BUILD,
+                gameEngine.screenWidth,
+                gameEngine.screenHeight,
+                {},
+                gameEngine::savePersistentData,
+                userId ?: "default_user"
+            )
+        }
+
+        binding.destroyAllButton.setOnClickListener {
+            Timber.d("Destroy All button clicked")
+            if (gameEngine.destroyAll()) {
+                binding.destroyAllButton.text = "DESTROY ALL (${gameEngine.destroyAllCharges}/3)"
+                binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
+                binding.destroyAllButton.isVisible = gameEngine.destroyAllCharges > 0
+            }
+        }
+
         partButtons.forEach { (button, _) ->
             button.setOnTouchListener(partTouchListener)
         }
@@ -553,8 +575,8 @@ class MainActivity : AppCompatActivity() {
     override fun onBackPressed() {
         if (gameStateManager.gameState == GameState.FLIGHT) {
             Timber.d("Back pressed in flight mode, saving score and returning to build")
-            gameEngine.flightModeManager.onDestroy()
-            gameStateManager.setGameState(GameState.BUILD, gameEngine.screenWidth, gameEngine.screenHeight, gameEngine.flightModeManager::resetFlightData, { _ -> }, userId)
+            gameEngine.flightModeManager.saveScore()
+            gameStateManager.setGameState(GameState.BUILD, gameEngine.screenWidth, gameEngine.screenHeight, {}, gameEngine::savePersistentData, userId)
         } else {
             super.onBackPressed()
         }

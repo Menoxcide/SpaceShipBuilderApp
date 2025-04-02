@@ -116,6 +116,42 @@
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
+
+        <!-- Pause Button: Positioned in the top-right corner -->
+        <Button
+            android:id="@+id/pauseButton"
+            android:layout_width="100dp"
+            android:layout_height="48dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="16dp"
+            android:backgroundTint="@color/holo_orange_dark"
+            android:text="PAUSE"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone"
+            android:elevation="10dp" />
+
+        <!-- Destroy All Button: Positioned in the bottom-right corner -->
+        <Button
+            android:id="@+id/destroyAllButton"
+            android:layout_width="100dp"
+            android:layout_height="48dp"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="16dp"
+            android:backgroundTint="@color/holo_red_dark"
+            android:text="DESTROY ALL (0/3)"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone"
+            android:elevation="10dp" />
     </FrameLayout>
 
     <EditText
@@ -185,17 +221,5 @@
         android:backgroundTint="@android:color/holo_green_dark"
         android:textColor="@android:color/white"
         android:visibility="gone" />
-
-    <Button
-        android:id="@+id/destroyAllButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_alignParentEnd="true"
-        android:layout_margin="16dp"
-        android:text="Destroy All (0/3)"
-        android:visibility="gone"
-        android:backgroundTint="@android:color/holo_red_dark"
-        android:textColor="@android:color/white" />
 
 </RelativeLayout>

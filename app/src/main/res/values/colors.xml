@@ -12,6 +12,7 @@
     <color name="holo_green_dark">#FF669900</color>
     <color name="holo_blue_light">#FF33B5E5</color>
     <color name="holo_red_dark">#FFE51C23</color>
+    <color name="holo_orange_dark">#FFBB33</color> <!-- Added holo_orange_dark -->
     <color name="neon_background_start">#00FF00</color>
     <color name="neon_background_end">#FF00FF</color>
 </resources>

@@ -753,8 +753,6 @@ class Renderer @Inject constructor(
             } else {
                 unlockMessage = null
             }
-
-            drawAIMessages(canvas, gameEngine.aiAssistant, statusBarHeight)
         } else if (gameState == GameState.BUILD) {
             val longestDistanceText = "Longest Distance: ${gameEngine.longestDistanceTraveled.toInt()}"
             val highestScoreText = "Highest Score: ${gameEngine.highestScore}"
@@ -768,12 +766,12 @@ class Renderer @Inject constructor(
         }
     }
 
-    private fun drawAIMessages(canvas: Canvas, aiAssistant: AIAssistant, statusBarHeight: Float) {
+    fun drawAIMessages(canvas: Canvas, aiAssistant: AIAssistant, statusBarHeight: Float) {
         val messages = aiAssistant.getDisplayedMessages()
         if (messages.isEmpty()) return
 
         val padding = 20f
-        val bottomMargin = 50f
+        val bottomOffset = aiAssistant.getBottomOffset() // Use the offset from AIAssistant
         val maxWidth = (screenWidth * 0.8f).toInt() // Max width for text wrapping
 
         messages.forEachIndexed { index, message ->
@@ -797,7 +795,8 @@ class Renderer @Inject constructor(
             val overlayWidth = min(textWidth + 2 * padding, maxWidth.toFloat())
             val overlayHeight = textHeight + 2 * padding
             val overlayX = (screenWidth - overlayWidth) / 2f
-            val overlayY = screenHeight - bottomMargin - overlayHeight - (index * (overlayHeight + padding))
+            // Adjust Y position to start above the bottomOffset
+            val overlayY = screenHeight - bottomOffset - overlayHeight - (index * (overlayHeight + padding))
 
             // Draw overlay
             canvas.drawRect(
