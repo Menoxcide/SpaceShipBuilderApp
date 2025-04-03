@@ -22,7 +22,9 @@ class FlightModeManager @Inject constructor(
     val glowDuration = 1000L
 
     private var continuesUsed = 0
+    private var adContinuesUsed = 0 // Track ad continues separately
     private val maxContinues = 2
+    private val maxAdContinues = 3
 
     var statusBarHeight: Float = 0f
 
@@ -166,25 +168,25 @@ class FlightModeManager @Inject constructor(
                         "power_up" -> {
                             shipManager.fuel = (shipManager.fuel + 20f).coerceAtMost(shipManager.fuelCapacity)
                             shipManager.hp = (shipManager.hp + 10f).coerceAtMost(shipManager.maxHp)
-                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Fuel +20", powerUp.type)
+                            gameObjectManager.renderer.shipRendererInstance.addPowerUpTextParticle(powerUp.x, powerUp.y, "Fuel +20", powerUp.type)
                             Timber.d("Collected power-up: Fuel +20, HP +10")
                             fuelHpGained = true
                         }
                         "shield", "speed", "stealth", "invincibility" -> {
                             powerUpManager.applyPowerUpEffect(powerUp.type, shipManager)
-                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, powerUp.type.replaceFirstChar { it.uppercase() }, powerUp.type)
+                            gameObjectManager.renderer.shipRendererInstance.addPowerUpTextParticle(powerUp.x, powerUp.y, powerUp.type.replaceFirstChar { it.uppercase() }, powerUp.type)
                         }
                         "warp" -> {
                             shipManager.shipX = Random.nextFloat() * (shipManager.screenWidth - 2 * shipManager.maxPartHalfWidth) + shipManager.maxPartHalfWidth
                             shipManager.shipY = Random.nextFloat() * (shipManager.screenHeight - shipManager.totalShipHeight) + shipManager.totalShipHeight / 2
-                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Warp", powerUp.type)
+                            gameObjectManager.renderer.shipRendererInstance.addPowerUpTextParticle(powerUp.x, powerUp.y, "Warp", powerUp.type)
                             Timber.d("Collected warp power-up")
                         }
                         "star" -> {
                             currentScore += 50
                             shipManager.starsCollected += 1
                             onStarsCollectedChange(shipManager.starsCollected)
-                            gameObjectManager.renderer.particleSystem.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
+                            gameObjectManager.renderer.shipRendererInstance.addPowerUpTextParticle(powerUp.x, powerUp.y, "Star +50", powerUp.type)
                             Timber.d("Collected star power-up, starsCollected=${shipManager.starsCollected}")
                         }
                     }
@@ -228,8 +230,8 @@ class FlightModeManager @Inject constructor(
             Timber.d("update called with userId: $userId, currentScore: $currentScore")
 
             if (shipManager.fuel <= 0 || shipManager.hp <= 0) {
-                Timber.d("Game over condition met. Fuel: ${shipManager.fuel}, HP: ${shipManager.hp}, Current score: $currentScore, Continues used: $continuesUsed, Revives: ${shipManager.reviveCount}")
-                if (continuesUsed < maxContinues) {
+                Timber.d("Game over condition met. Fuel: ${shipManager.fuel}, HP: ${shipManager.hp}, Current score: $currentScore, Continues used: $continuesUsed, Ad continues used: $adContinuesUsed, Revives: ${shipManager.reviveCount}")
+                if (continuesUsed < maxContinues && adContinuesUsed < maxAdContinues) {
                     gameStateManager.setGameState(
                         GameState.GAME_OVER,
                         shipManager.screenWidth,
@@ -244,10 +246,11 @@ class FlightModeManager @Inject constructor(
                         {
                             Timber.d("Player chose to continue with ad")
                             continuesUsed++
+                            adContinuesUsed++
                             shipManager.hp = shipManager.maxHp
                             shipManager.fuel = shipManager.fuelCapacity
                             gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                            Timber.d("Player continued after ad, continues used: $continuesUsed")
+                            Timber.d("Player continued after ad, continues used: $continuesUsed, ad continues used: $adContinuesUsed")
                         },
                         {
                             if (shipManager.reviveCount > 0) {
@@ -264,7 +267,12 @@ class FlightModeManager @Inject constructor(
                         },
                         {
                             Timber.d("Player chose to return to build, saving score: $currentScore")
-                            saveScore()
+                            // Save score to experience when player chooses to return to build
+                            if (currentScore > 0) {
+                                gameEngine.get().addExperience(currentScore)
+                                gameEngine.get().savePersistentData(userId)
+                                currentScore = 0
+                            }
                             gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
                             gameObjectManager.clearGameObjects()
                             powerUpManager.resetPowerUpEffects()
@@ -289,8 +297,13 @@ class FlightModeManager @Inject constructor(
                         }
                     )
                 } else {
-                    Timber.d("No continues left, forcing return to build with score: $currentScore")
-                    saveScore()
+                    Timber.d("No continues left or max ad continues used, forcing return to build with score: $currentScore")
+                    // Save score to experience when no continues are left or max ad continues are used
+                    if (currentScore > 0) {
+                        gameEngine.get().addExperience(currentScore)
+                        gameEngine.get().savePersistentData(userId)
+                        currentScore = 0
+                    }
                     gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
                     gameObjectManager.clearGameObjects()
                     powerUpManager.resetPowerUpEffects()
@@ -328,25 +341,23 @@ class FlightModeManager @Inject constructor(
         levelUpAnimationStartTime = 0L
         glowStartTime = 0L
         continuesUsed = 0
+        adContinuesUsed = 0
         Timber.d("Flight data reset")
     }
 
     fun saveScore() {
-        if (currentScore > 0) {
-            Timber.d("Saving score: $currentScore for userId: $userId")
-            gameEngine.get().addExperience(currentScore)
-            gameEngine.get().savePersistentData(userId)
-            currentScore = 0
-        } else {
-            Timber.d("No score to save: $currentScore")
-        }
+        // Removed automatic saving of score to experience
+        // Score saving is now handled explicitly in the game-over logic
+        Timber.d("saveScore called, but score will be saved only under specific conditions")
     }
 
     fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, userId: String?) {
         this.userId = userId ?: "default_user"
-        shipManager.launchShip(screenWidth, screenHeight, sortedParts)
-        gameStateManager.setGameState(GameState.FLIGHT, screenWidth, screenHeight, ::resetFlightData, { _ -> }, this.userId)
-        Timber.d("launchShip called with userId: $userId")
+        // Check if we're resuming from a pause
+        val isResuming = gameStateManager.getPausedState() != null
+        shipManager.launchShip(screenWidth, screenHeight, sortedParts, isResuming)
+        gameStateManager.setGameState(GameState.FLIGHT, screenWidth, screenHeight, ::resetFlightData, { _ -> }, this.userId, gameEngine.get())
+        Timber.d("launchShip called with userId: $userId, isResuming: $isResuming")
     }
 
     fun spawnProjectile() {
@@ -375,14 +386,14 @@ class FlightModeManager @Inject constructor(
         }
         shipManager.destroyAllCharges--
         gameObjectManager.asteroids.forEach { asteroid ->
-            gameObjectManager.renderer.particleSystem.addExplosionParticles(asteroid.x, asteroid.y)
+            gameObjectManager.renderer.shipRendererInstance.addExplosionParticles(asteroid.x, asteroid.y)
             currentScore += ASTEROID_DESTROY_POINTS
-            gameObjectManager.renderer.particleSystem.addScoreTextParticle(asteroid.x, asteroid.y, "+$ASTEROID_DESTROY_POINTS")
+            gameObjectManager.renderer.shipRendererInstance.addScoreTextParticle(asteroid.x, asteroid.y, "+$ASTEROID_DESTROY_POINTS")
         }
         gameObjectManager.enemyShips.forEach { enemy ->
-            gameObjectManager.renderer.particleSystem.addExplosionParticles(enemy.x, enemy.y)
+            gameObjectManager.renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
             currentScore += 50
-            gameObjectManager.renderer.particleSystem.addScoreTextParticle(enemy.x, enemy.y, "+50")
+            gameObjectManager.renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
         }
         gameObjectManager.asteroids.clear()
         gameObjectManager.enemyShips.clear()
@@ -404,5 +415,26 @@ class FlightModeManager @Inject constructor(
         shipManager.onDestroy()
         audioManager.onDestroy()
         gameObjectManager.renderer.onDestroy()
+    }
+
+    // Methods to get and set private fields for state saving/restoration
+    fun getSessionDistanceTraveled(): Float = sessionDistanceTraveled
+    fun setSessionDistanceTraveled(value: Float) {
+        sessionDistanceTraveled = value
+    }
+
+    fun getLastScoreUpdateTime(): Long = lastScoreUpdateTime
+    fun setLastScoreUpdateTime(value: Long) {
+        lastScoreUpdateTime = value
+    }
+
+    fun getLastDistanceUpdateTime(): Long = lastDistanceUpdateTime
+    fun setLastDistanceUpdateTime(value: Long) {
+        lastDistanceUpdateTime = value
+    }
+
+    fun getContinuesUsed(): Int = continuesUsed
+    fun setContinuesUsed(value: Int) {
+        continuesUsed = value
     }
 }

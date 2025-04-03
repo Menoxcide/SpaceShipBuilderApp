@@ -44,8 +44,8 @@ class CollisionManager @Inject constructor(
         if (boss != null) {
             val bossRect = RectF(boss.x - 75f, boss.y - 75f, boss.x + 75f, boss.y + 75f)
             if (shipRect.intersect(bossRect) && !stealthActive && !invincibilityActive) {
-                renderer.particleSystem.addCollisionParticles(shipX, shipY)
-                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 50)
+                renderer.shipRendererInstance.addCollisionParticles(shipX, shipY)
+                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, 50)
                 audioManager.playCollisionSound()
                 glowStartTime = currentTime
                 Timber.d("Collided with boss, HP decreased")
@@ -62,7 +62,7 @@ class CollisionManager @Inject constructor(
             )
             if (shipRect.intersect(powerUpRect)) {
                 powerUpsToRemove.add(powerUp)
-                renderer.particleSystem.addPowerUpSpriteParticles(shipX, shipY, powerUp.type)
+                renderer.shipRendererInstance.addPowerUpSpriteParticles(shipX, shipY, powerUp.type)
                 Timber.d("Collected ${powerUp.type} power-up")
                 onPowerUpCollected(powerUp)
                 audioManager.playPowerUpSound()
@@ -80,8 +80,8 @@ class CollisionManager @Inject constructor(
             )
             if (shipRect.intersect(asteroidRect) && !stealthActive && !invincibilityActive) {
                 asteroidsToRemove.add(asteroid)
-                renderer.particleSystem.addCollisionParticles(shipX, shipY)
-                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10)
+                renderer.shipRendererInstance.addCollisionParticles(shipX, shipY)
+                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, 10)
                 audioManager.playCollisionSound()
                 glowStartTime = currentTime
                 Timber.d("Hit asteroid, HP decreased")
@@ -104,8 +104,8 @@ class CollisionManager @Inject constructor(
             )
             if (shipRect.intersect(projectileRect) && !stealthActive && !invincibilityActive) {
                 enemyProjectilesToRemove.add(projectile)
-                renderer.particleSystem.addCollisionParticles(shipX, shipY)
-                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 10)
+                renderer.shipRendererInstance.addCollisionParticles(shipX, shipY)
+                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, 10)
                 audioManager.playCollisionSound()
                 glowStartTime = currentTime
                 Timber.d("Hit by enemy projectile, HP decreased")
@@ -125,8 +125,8 @@ class CollisionManager @Inject constructor(
             )
             if (shipRect.intersect(enemyRect) && !stealthActive && !invincibilityActive) {
                 enemyShipsToRemove.add(enemy)
-                renderer.particleSystem.addCollisionParticles(shipX, shipY)
-                renderer.particleSystem.addDamageTextParticle(shipX, shipY, 25)
+                renderer.shipRendererInstance.addCollisionParticles(shipX, shipY)
+                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, 25)
                 audioManager.playCollisionSound()
                 glowStartTime = currentTime
                 if (Random.nextFloat() < 0.25f) {
@@ -161,8 +161,8 @@ class CollisionManager @Inject constructor(
                     asteroidsToRemove.add(asteroid)
                     projectilesToRemove.add(projectile)
                     scoreDelta += FlightModeManager.ASTEROID_DESTROY_POINTS
-                    renderer.particleSystem.addExplosionParticles(asteroid.x, asteroid.y)
-                    renderer.particleSystem.addScoreTextParticle(asteroid.x, asteroid.y, "+${FlightModeManager.ASTEROID_DESTROY_POINTS}")
+                    renderer.shipRendererInstance.addExplosionParticles(asteroid.x, asteroid.y)
+                    renderer.shipRendererInstance.addScoreTextParticle(asteroid.x, asteroid.y, "+${FlightModeManager.ASTEROID_DESTROY_POINTS}")
                     Timber.d("Projectile hit asteroid, score increased by ${FlightModeManager.ASTEROID_DESTROY_POINTS}")
                 }
             }
@@ -177,8 +177,8 @@ class CollisionManager @Inject constructor(
                     enemyShipsToRemove.add(enemy)
                     projectilesToRemove.add(projectile)
                     scoreDelta += 50
-                    renderer.particleSystem.addExplosionParticles(enemy.x, enemy.y)
-                    renderer.particleSystem.addScoreTextParticle(enemy.x, enemy.y, "+50")
+                    renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
+                    renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
                     if (Random.nextFloat() < 0.25f) {
                         val powerUpType = if (Random.nextBoolean()) "star" else "power_up"
                         gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)
@@ -195,8 +195,8 @@ class CollisionManager @Inject constructor(
                     enemyShipsToRemove.add(enemy)
                     homingProjectilesToRemove.add(projectile)
                     scoreDelta += 50
-                    renderer.particleSystem.addExplosionParticles(enemy.x, enemy.y)
-                    renderer.particleSystem.addScoreTextParticle(enemy.x, enemy.y, "+50")
+                    renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
+                    renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
                     if (Random.nextFloat() < 0.25f) {
                         val powerUpType = if (Random.nextBoolean()) "star" else "power_up"
                         gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)

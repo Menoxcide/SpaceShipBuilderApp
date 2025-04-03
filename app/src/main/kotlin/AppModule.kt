@@ -8,7 +8,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
-import dagger.Lazy // Import Lazy
+import dagger.Lazy
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -28,11 +28,53 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideRenderer(
-        @ApplicationContext context: Context,
+    fun provideBitmapManager(@ApplicationContext context: Context): BitmapManager {
+        return BitmapManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideBackgroundRenderer(): BackgroundRenderer {
+        return BackgroundRenderer()
+    }
+
+    @Provides
+    @Singleton
+    fun provideShipRenderer(
+        bitmapManager: BitmapManager,
         particleSystem: ParticleSystem
+    ): ShipRenderer {
+        return ShipRenderer(bitmapManager, particleSystem)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGameObjectRenderer(bitmapManager: BitmapManager): GameObjectRenderer {
+        return GameObjectRenderer(bitmapManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUIRenderer(): UIRenderer {
+        return UIRenderer()
+    }
+
+    @Provides
+    @Singleton
+    fun provideRenderer(
+        bitmapManager: BitmapManager,
+        backgroundRenderer: BackgroundRenderer,
+        shipRenderer: ShipRenderer,
+        gameObjectRenderer: GameObjectRenderer,
+        uiRenderer: UIRenderer
     ): Renderer {
-        return Renderer(context, particleSystem)
+        return Renderer(
+            bitmapManager,
+            backgroundRenderer,
+            shipRenderer,
+            gameObjectRenderer,
+            uiRenderer
+        )
     }
 
     @Provides
@@ -92,7 +134,7 @@ object AppModule {
         audioManager: AudioManager,
         gameStateManager: GameStateManager,
         aiAssistant: AIAssistant,
-        gameEngine: Lazy<GameEngine> // Use Lazy<GameEngine>
+        gameEngine: Lazy<GameEngine>
     ): FlightModeManager = FlightModeManager(
         shipManager,
         gameObjectManager,

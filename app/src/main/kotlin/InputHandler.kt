@@ -50,7 +50,7 @@ class InputHandler @Inject constructor(
                         if (buildModeManager.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
                             val shipCenterX = gameEngine.screenWidth / 2f
                             val shipCenterY = (buildModeManager.cockpitY + buildModeManager.engineY) / 2f
-                            renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+                            renderer.shipRendererInstance.addCollectionParticles(shipCenterX, shipCenterY)
                             Timber.d("Ship fully assembled and spaceworthy! Triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
                         }
                         true

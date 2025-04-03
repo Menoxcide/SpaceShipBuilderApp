@@ -120,7 +120,7 @@ class MainActivity : AppCompatActivity() {
                             if (buildModeManager.parts.size == 3 && gameEngine.isShipSpaceworthy(gameEngine.screenHeight)) {
                                 val shipCenterX = gameEngine.screenWidth / 2f
                                 val shipCenterY = (buildModeManager.cockpitY + buildModeManager.engineY) / 2f
-                                binding.buildView.renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+                                binding.buildView.renderer.shipRendererInstance.addCollectionParticles(shipCenterX, shipCenterY)
                                 Timber.d("Ship fully assembled and spaceworthy! Triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
                             }
                         } else {
@@ -281,10 +281,7 @@ class MainActivity : AppCompatActivity() {
                     binding.flightView.postInvalidate()
                     Timber.d("FlightView focused: ${binding.flightView.isFocused}, invalidated")
                 } else {
-                    if (gameEngine.flightModeManager.currentScore > 0) {
-                        Timber.d("Saving score ${gameEngine.flightModeManager.currentScore} before switching to build mode")
-                        gameEngine.flightModeManager.saveScore()
-                    }
+                    // Do not save score here when switching to build mode (paused state)
                     binding.buildView.setOnTouchListener(placedPartTouchListener)
                     binding.flightView.setGameMode(GameState.BUILD)
                     binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
@@ -514,7 +511,15 @@ class MainActivity : AppCompatActivity() {
             if (gameStateManager.gameState == GameState.FLIGHT) {
                 Timber.d("Exiting flight mode to open Skill Tree")
                 gameEngine.flightModeManager.onDestroy()
-                gameStateManager.setGameState(GameState.BUILD, gameEngine.screenWidth, gameEngine.screenHeight, gameEngine.flightModeManager::resetFlightData, { _ -> }, userId)
+                gameStateManager.setGameState(
+                    GameState.BUILD,
+                    gameEngine.screenWidth,
+                    gameEngine.screenHeight,
+                    gameEngine.flightModeManager::resetFlightData,
+                    gameEngine::savePersistentData,
+                    userId,
+                    gameEngine
+                )
             }
             val intent = Intent(this, SkillTreeActivity::class.java)
             startActivity(intent)
@@ -527,9 +532,10 @@ class MainActivity : AppCompatActivity() {
                 GameState.BUILD,
                 gameEngine.screenWidth,
                 gameEngine.screenHeight,
-                {},
+                gameEngine.flightModeManager::resetFlightData,
                 gameEngine::savePersistentData,
-                userId ?: "default_user"
+                userId ?: "default_user",
+                gameEngine
             )
         }
 
@@ -574,9 +580,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (gameStateManager.gameState == GameState.FLIGHT) {
-            Timber.d("Back pressed in flight mode, saving score and returning to build")
-            gameEngine.flightModeManager.saveScore()
-            gameStateManager.setGameState(GameState.BUILD, gameEngine.screenWidth, gameEngine.screenHeight, {}, gameEngine::savePersistentData, userId)
+            Timber.d("Back pressed in flight mode, returning to build without saving score")
+            gameStateManager.setGameState(
+                GameState.BUILD,
+                gameEngine.screenWidth,
+                gameEngine.screenHeight,
+                gameEngine.flightModeManager::resetFlightData,
+                gameEngine::savePersistentData,
+                userId,
+                gameEngine
+            )
         } else {
             super.onBackPressed()
         }

@@ -114,14 +114,16 @@ class ShipManager @Inject constructor(
         Timber.d("Applied ship color effects: speed=$currentSpeed, fuelConsumption=$currentFuelConsumption")
     }
 
-    fun applyShipSetCharacteristics() {
+    fun applyShipSetCharacteristics(isResuming: Boolean = false) {
         baseSpeed = 5f * (1 + (skillManager.skills["speed_boost"] ?: 0) * 0.05f)
         currentSpeed = baseSpeed
         baseProjectileSpeed = 10f * (1 + (skillManager.skills["projectile_damage"] ?: 0) * 0.10f)
         currentProjectileSpeed = baseProjectileSpeed
-        missileCount = maxMissiles
-        hp = maxHp
-        fuel = fuelCapacity
+        // Only reset HP and fuel if not resuming from a pause
+        if (!isResuming) {
+            hp = maxHp
+            fuel = fuelCapacity
+        }
 
         when (selectedShipSet) {
             1 -> {
@@ -137,12 +139,15 @@ class ShipManager @Inject constructor(
                 currentProjectileSpeed = baseProjectileSpeed
             }
         }
-        Timber.d("Applied ship set $selectedShipSet characteristics: speed=$currentSpeed, projectileSpeed=$currentProjectileSpeed, maxMissiles=$maxMissiles, maxHp=$maxHp")
+        Timber.d("Applied ship set $selectedShipSet characteristics: speed=$currentSpeed, projectileSpeed=$currentProjectileSpeed, maxMissiles=$maxMissiles, maxHp=$maxHp, isResuming=$isResuming, hp=$hp, fuel=$fuel")
     }
 
-    fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>) {
-        fuel = 50f
-        hp = maxHp
+    fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, isResuming: Boolean = false) {
+        // Set initial fuel and HP to 50 and maxHp only if not resuming
+        if (!isResuming) {
+            fuel = 50f
+            hp = maxHp
+        }
         if (screenWidth > 0f && screenHeight > 0f) {
             shipX = screenWidth / 2f
             shipY = screenHeight / 2f
@@ -169,8 +174,12 @@ class ShipManager @Inject constructor(
         }
 
         applyShipColorEffects()
-        applyShipSetCharacteristics()
-        Timber.d("Ship launched: totalShipHeight=$totalShipHeight, maxPartHalfWidth=$maxPartHalfWidth")
+        // Only reset missile count if not resuming from a pause
+        if (!isResuming) {
+            missileCount = maxMissiles
+        }
+        applyShipSetCharacteristics(isResuming)
+        Timber.d("Ship launched: totalShipHeight=$totalShipHeight, maxPartHalfWidth=$maxPartHalfWidth, isResuming=$isResuming, missileCount=$missileCount, hp=$hp, fuel=$fuel")
     }
 
     fun moveShip(direction: Int) {

@@ -13,6 +13,26 @@ data class PowerUp(var x: Float, var y: Float, val type: String) {
     }
 
     fun isExpired(screenHeight: Float): Boolean = y > screenHeight
+
+    // Convert to a map for Firebase storage
+    fun toMap(): Map<String, Any> {
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "type" to type
+        )
+    }
+
+    companion object {
+        // Convert from a map (loaded from Firebase) to PowerUp
+        fun fromMap(map: Map<String, Any>): PowerUp {
+            return PowerUp(
+                x = (map["x"] as? Double)?.toFloat() ?: 0f,
+                y = (map["y"] as? Double)?.toFloat() ?: 0f,
+                type = map["type"] as? String ?: "power_up"
+            )
+        }
+    }
 }
 
 open class Asteroid(var x: Float, var y: Float, var size: Float, var rotation: Float = 0f, var angularVelocity: Float = Random.nextFloat() * 0.1f) {
@@ -26,12 +46,48 @@ open class Asteroid(var x: Float, var y: Float, var size: Float, var rotation: F
     }
 
     open fun isOffScreen(screenHeight: Float, screenWidth: Float): Boolean = y > screenHeight + size || x < -size || x > screenWidth + size
+
+    // Convert to a map for Firebase storage
+    open fun toMap(): Map<String, Any> {
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "size" to size,
+            "rotation" to rotation,
+            "angularVelocity" to angularVelocity,
+            "isGiant" to false
+        )
+    }
+
+    companion object {
+        // Convert from a map (loaded from Firebase) to Asteroid
+        fun fromMap(map: Map<String, Any>): Asteroid {
+            return if (map["isGiant"] as? Boolean == true) {
+                GiantAsteroid(
+                    x = (map["x"] as? Double)?.toFloat() ?: 0f,
+                    y = (map["y"] as? Double)?.toFloat() ?: 0f,
+                    size = (map["size"] as? Double)?.toFloat() ?: 30f
+                ).apply {
+                    rotation = (map["rotation"] as? Double)?.toFloat() ?: 0f
+                    angularVelocity = (map["angularVelocity"] as? Double)?.toFloat() ?: 0.15f
+                }
+            } else {
+                Asteroid(
+                    x = (map["x"] as? Double)?.toFloat() ?: 0f,
+                    y = (map["y"] as? Double)?.toFloat() ?: 0f,
+                    size = (map["size"] as? Double)?.toFloat() ?: 30f,
+                    rotation = (map["rotation"] as? Double)?.toFloat() ?: 0f,
+                    angularVelocity = (map["angularVelocity"] as? Double)?.toFloat() ?: Random.nextFloat() * 0.1f
+                )
+            }
+        }
+    }
 }
 
 class GiantAsteroid(x: Float, y: Float, size: Float) : Asteroid(x, y, size * FlightModeManager.GIANT_ASTEROID_SCALE, 0f, 0.15f) {
     fun explode(gameObjectManager: GameObjectManager) {
         Timber.d("Giant asteroid exploded at (x=$x, y=$y)")
-        gameObjectManager.renderer.particleSystem.addExplosionParticles(x, y)
+        gameObjectManager.renderer.shipRendererInstance.addExplosionParticles(x, y)
         repeat(FlightModeManager.SMALL_ASTEROID_COUNT) {
             gameObjectManager.asteroids.add(Asteroid(x, y, size / 2f, Random.nextFloat() * 360f, Random.nextFloat() * 0.2f))
         }
@@ -39,6 +95,17 @@ class GiantAsteroid(x: Float, y: Float, size: Float) : Asteroid(x, y, size * Fli
     }
 
     override fun isOffScreen(screenHeight: Float, screenWidth: Float): Boolean = y > screenHeight + size || x < -size || x > screenWidth + size
+
+    override fun toMap(): Map<String, Any> {
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "size" to size / FlightModeManager.GIANT_ASTEROID_SCALE, // Store the base size
+            "rotation" to rotation,
+            "angularVelocity" to angularVelocity,
+            "isGiant" to true
+        )
+    }
 }
 
 data class Projectile(var x: Float, var y: Float, var speedX: Float, var speedY: Float, val screenHeight: Float, val screenWidth: Float) {
@@ -48,9 +115,59 @@ data class Projectile(var x: Float, var y: Float, var speedX: Float, var speedY:
     }
 
     fun isOffScreen(): Boolean = y < -FlightModeManager.PROJECTILE_SIZE || y > screenHeight + FlightModeManager.PROJECTILE_SIZE || x < -FlightModeManager.PROJECTILE_SIZE || x > screenWidth + FlightModeManager.PROJECTILE_SIZE
+
+    // Convert to a map for Firebase storage
+    fun toMap(): Map<String, Any> {
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "speedX" to speedX,
+            "speedY" to speedY,
+            "screenHeight" to screenHeight,
+            "screenWidth" to screenWidth
+        )
+    }
+
+    companion object {
+        // Convert from a map (loaded from Firebase) to Projectile
+        fun fromMap(map: Map<String, Any>): Projectile {
+            return Projectile(
+                x = (map["x"] as? Double)?.toFloat() ?: 0f,
+                y = (map["y"] as? Double)?.toFloat() ?: 0f,
+                speedX = (map["speedX"] as? Double)?.toFloat() ?: 0f,
+                speedY = (map["speedY"] as? Double)?.toFloat() ?: 0f,
+                screenHeight = (map["screenHeight"] as? Double)?.toFloat() ?: 0f,
+                screenWidth = (map["screenWidth"] as? Double)?.toFloat() ?: 0f
+            )
+        }
+    }
 }
 
-data class EnemyShip(var x: Float, var y: Float, var speedY: Float, var lastShotTime: Long = 0L, val shotInterval: Long)
+data class EnemyShip(var x: Float, var y: Float, var speedY: Float, var lastShotTime: Long = 0L, val shotInterval: Long) {
+    // Convert to a map for Firebase storage
+    fun toMap(): Map<String, Any> {
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "speedY" to speedY,
+            "lastShotTime" to lastShotTime,
+            "shotInterval" to shotInterval
+        )
+    }
+
+    companion object {
+        // Convert from a map (loaded from Firebase) to EnemyShip
+        fun fromMap(map: Map<String, Any>): EnemyShip {
+            return EnemyShip(
+                x = (map["x"] as? Double)?.toFloat() ?: 0f,
+                y = (map["y"] as? Double)?.toFloat() ?: 0f,
+                speedY = (map["speedY"] as? Double)?.toFloat() ?: 5f,
+                lastShotTime = map["lastShotTime"] as? Long ?: 0L,
+                shotInterval = map["shotInterval"] as? Long ?: 4000L
+            )
+        }
+    }
+}
 
 data class BossShip(
     var x: Float,
@@ -102,6 +219,42 @@ data class BossShip(
             Timber.d("Boss shot projectile at (x=$x, y=$y)")
         }
     }
+
+    // Convert to a map for Firebase storage
+    fun toMap(): Map<String, Any> {
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "hp" to hp,
+            "maxHp" to maxHp,
+            "shotInterval" to shotInterval,
+            "movementInterval" to movementInterval,
+            "speedX" to speedX,
+            "speedY" to speedY,
+            "lastShotTime" to lastShotTime,
+            "lastMovementChange" to lastMovementChange,
+            "tier" to tier
+        )
+    }
+
+    companion object {
+        // Convert from a map (loaded from Firebase) to BossShip
+        fun fromMap(map: Map<String, Any>): BossShip {
+            return BossShip(
+                x = (map["x"] as? Double)?.toFloat() ?: 0f,
+                y = (map["y"] as? Double)?.toFloat() ?: 0f,
+                hp = (map["hp"] as? Double)?.toFloat() ?: 100f,
+                maxHp = (map["maxHp"] as? Double)?.toFloat() ?: 100f,
+                shotInterval = map["shotInterval"] as? Long ?: FlightModeManager.BOSS_SHOT_INTERVAL,
+                movementInterval = map["movementInterval"] as? Long ?: FlightModeManager.BOSS_MOVEMENT_INTERVAL,
+                speedX = (map["speedX"] as? Double)?.toFloat() ?: 0f,
+                speedY = (map["speedY"] as? Double)?.toFloat() ?: 0f,
+                lastShotTime = map["lastShotTime"] as? Long ?: 0L,
+                lastMovementChange = map["lastMovementChange"] as? Long ?: 0L,
+                tier = (map["tier"] as? Long)?.toInt() ?: 1
+            )
+        }
+    }
 }
 
 data class HomingProjectile(
@@ -130,7 +283,7 @@ data class HomingProjectile(
             val speedY = (dy / distance) * speed
             x += speedX
             y += speedY
-            gameObjectManager.renderer.particleSystem.addMissileExhaustParticles(x, y + 10f)
+            gameObjectManager.renderer.shipRendererInstance.addMissileExhaustParticles(x, y + 10f)
         }
     }
 
@@ -157,6 +310,62 @@ data class HomingProjectile(
             is EnemyShip -> gameObjectManager.enemyShips.contains(target)
             is BossShip -> gameObjectManager.getBoss() == target
             else -> false
+        }
+    }
+
+    // Convert to a map for Firebase storage
+    fun toMap(): Map<String, Any> {
+        val targetData = when (target) {
+            is EnemyShip -> mapOf(
+                "type" to "EnemyShip",
+                "x" to target.x,
+                "y" to target.y
+            )
+            is BossShip -> mapOf(
+                "type" to "BossShip",
+                "x" to target.x,
+                "y" to target.y
+            )
+            else -> mapOf("type" to "Unknown")
+        }
+        return mapOf(
+            "x" to x,
+            "y" to y,
+            "target" to targetData,
+            "screenHeight" to screenHeight,
+            "screenWidth" to screenWidth,
+            "hasHit" to hasHit
+        )
+    }
+
+    companion object {
+        // Convert from a map (loaded from Firebase) to HomingProjectile
+        // Note: The target will be resolved by GameObjectManager during restoration
+        fun fromMap(map: Map<String, Any>, gameObjectManager: GameObjectManager): HomingProjectile {
+            val x = (map["x"] as? Double)?.toFloat() ?: 0f
+            val y = (map["y"] as? Double)?.toFloat() ?: 0f
+            val screenHeight = (map["screenHeight"] as? Double)?.toFloat() ?: 0f
+            val screenWidth = (map["screenWidth"] as? Double)?.toFloat() ?: 0f
+            val hasHit = map["hasHit"] as? Boolean ?: false
+            val targetData = map["target"] as? Map<String, Any> ?: emptyMap()
+            val targetType = targetData["type"] as? String
+            val targetX = (targetData["x"] as? Double)?.toFloat() ?: 0f
+            val targetY = (targetData["y"] as? Double)?.toFloat() ?: 0f
+
+            // Find the closest matching target based on position
+            val target = when (targetType) {
+                "EnemyShip" -> gameObjectManager.enemyShips.minByOrNull { enemy ->
+                    val dx = enemy.x - targetX
+                    val dy = enemy.y - targetY
+                    dx * dx + dy * dy
+                }
+                "BossShip" -> gameObjectManager.getBoss()
+                else -> null
+            } ?: gameObjectManager.enemyShips.firstOrNull() // Fallback to first enemy ship if target not found
+
+            return HomingProjectile(x, y, target ?: Any(), screenHeight, screenWidth).apply {
+                this.hasHit = hasHit
+            }
         }
     }
 }

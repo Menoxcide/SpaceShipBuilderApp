@@ -76,6 +76,9 @@ class GameEngine @Inject constructor(
     var experience: Long = 0
         set(value) {
             field = value
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
         }
 
     var shipColor: String
@@ -312,6 +315,9 @@ class GameEngine @Inject constructor(
                 loadedSkills.forEach { (key, value) -> skillManager.skills[key] = value.toInt() }
                 updateUnlockedShipSets()
                 Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, experience=$experience, skills=${skillManager.skills}")
+
+                // Load the paused state from Firebase, passing the GameObjectManager
+                gameStateManager.loadPausedStateFromFirebase(userId, flightModeManager.gameObjectManager)
             } else {
                 Timber.d("User data not found for $userId, initializing with defaults")
                 val userData = hashMapOf(
@@ -444,7 +450,7 @@ class GameEngine @Inject constructor(
             enemyShips = enemyShips,
             boss = getBoss(),
             missileCount = missileCount,
-            maxMissiles = flightModeManager.shipManager.maxMissiles, // Corrected reference
+            maxMissiles = flightModeManager.shipManager.maxMissiles,
             powerUpCollected = null,
             fuelHpGained = false,
             currentTime = System.currentTimeMillis(),
@@ -466,6 +472,45 @@ class GameEngine @Inject constructor(
 
     fun launchShip(screenWidth: Float, screenHeight: Float): Boolean {
         if (buildModeManager.isShipSpaceworthy(screenHeight, statusBarHeight)) {
+            val pausedState = gameStateManager.getPausedState()
+            val isResuming = pausedState != null
+
+            // If resuming from a pause, apply the paused state stats
+            if (isResuming) {
+                Timber.d("Resuming from paused state, applying stats: $pausedState")
+                hp = pausedState!!.hp
+                fuel = pausedState.fuel
+                missileCount = pausedState.missileCount
+                shipX = pausedState.shipX
+                shipY = pausedState.shipY
+                currentScore = pausedState.currentScore
+                distanceTraveled = pausedState.distanceTraveled
+                level = pausedState.level
+                shieldActive = pausedState.shieldActive
+                speedBoostActive = pausedState.speedBoostActive
+                stealthActive = pausedState.stealthActive
+                invincibilityActive = pausedState.invincibilityActive
+                flightModeManager.powerUpManager.setShieldEndTime(pausedState.shieldEndTime)
+                flightModeManager.powerUpManager.setSpeedBoostEndTime(pausedState.speedBoostEndTime)
+                flightModeManager.powerUpManager.setStealthEndTime(pausedState.stealthEndTime)
+                flightModeManager.powerUpManager.setInvincibilityEndTime(pausedState.invincibilityEndTime)
+                flightModeManager.setSessionDistanceTraveled(pausedState.sessionDistanceTraveled)
+                flightModeManager.setLastScoreUpdateTime(pausedState.lastScoreUpdateTime)
+                flightModeManager.setLastDistanceUpdateTime(pausedState.lastDistanceUpdateTime)
+                glowStartTime = pausedState.glowStartTime
+                levelUpAnimationStartTime = pausedState.levelUpAnimationStartTime
+                flightModeManager.setContinuesUsed(pausedState.continuesUsed)
+            }
+
+            gameStateManager.setGameState(
+                GameState.FLIGHT,
+                screenWidth,
+                screenHeight,
+                flightModeManager::resetFlightData,
+                ::savePersistentData,
+                userId,
+                this
+            )
             val sortedParts = buildModeManager.getAndClearParts().sortedBy { it.y }
             flightModeManager.launchShip(screenWidth, screenHeight, sortedParts, userId)
             val newAchievements = achievementManager.checkAchievements(level, distanceTraveled, currentScore, starsCollected, missilesLaunched, bossesDefeated)
@@ -568,12 +613,6 @@ class GameEngine @Inject constructor(
     fun onDestroy() {
         Timber.d("GameEngine onDestroy called")
         flightModeManager.onDestroy()
-        if (userId != null && flightModeManager.currentScore > 0) {
-            experience += flightModeManager.currentScore
-            savePersistentData(userId!!)
-            Timber.d("Saved experience on destroy due to unsaved score: $experience")
-            flightModeManager.currentScore = 0
-        }
     }
 
     fun addExperience(score: Int) {

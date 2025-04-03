@@ -119,11 +119,11 @@ class GameObjectManager @Inject constructor(
                 if (projectileRect.intersect(bossRect)) {
                     localBoss.hp -= 10f
                     projectilesToRemove.add(projectile)
-                    renderer.particleSystem.addExplosionParticles(projectile.x, projectile.y)
+                    renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
                     Timber.d("Boss hit by regular projectile, HP decreased to ${localBoss.hp}")
                     if (localBoss.hp <= 0) {
-                        renderer.particleSystem.addExplosionParticles(localBoss.x, localBoss.y)
-                        renderer.particleSystem.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
+                        renderer.shipRendererInstance.addExplosionParticles(localBoss.x, localBoss.y)
+                        renderer.shipRendererInstance.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
                         spawnPowerUp(localBoss.x, localBoss.y, "star")
                         spawnPowerUp(localBoss.x + 20f, localBoss.y + 20f, "power_up")
                         Timber.d("Boss defeated! Dropped star and fuel power-up at (x=${localBoss.x}, y=${localBoss.y})")
@@ -139,11 +139,11 @@ class GameObjectManager @Inject constructor(
                     if (projectile.target == localBoss && projectile.checkCollision(bossRect)) {
                         localBoss.hp -= 20f
                         homingProjectilesToRemove.add(projectile)
-                        renderer.particleSystem.addExplosionParticles(projectile.x, projectile.y)
+                        renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
                         Timber.d("Boss hit by homing missile, HP decreased to ${localBoss.hp}")
                         if (localBoss.hp <= 0) {
-                            renderer.particleSystem.addExplosionParticles(localBoss.x, localBoss.y)
-                            renderer.particleSystem.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
+                            renderer.shipRendererInstance.addExplosionParticles(localBoss.x, localBoss.y)
+                            renderer.shipRendererInstance.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
                             spawnPowerUp(localBoss.x, localBoss.y, "star")
                             spawnPowerUp(localBoss.x + 20f, localBoss.y + 20f, "power_up")
                             Timber.d("Boss defeated! Dropped star and fuel power-up at (x=${localBoss.x}, y=${localBoss.y})")
@@ -226,4 +226,11 @@ class GameObjectManager @Inject constructor(
             projectile.isOffScreen() || projectile.hasHitTarget() || !projectile.isTargetValid(this)
         }
     }
+
+    // Method to set the boss for state restoration
+    fun setBoss(bossShip: BossShip?) {
+        boss = bossShip
+        bossDefeated = bossShip == null
+    }
 }
+

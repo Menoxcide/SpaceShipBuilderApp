@@ -97,7 +97,7 @@ class BuildView @Inject constructor(
         if (currentSpaceworthy && !isSpaceworthy) {
             val shipCenterX = gameEngine.screenWidth / 2f
             val shipCenterY = (buildModeManager.cockpitY + buildModeManager.engineY) / 2f
-            renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+            renderer.shipRendererInstance.addCollectionParticles(shipCenterX, shipCenterY)
             Timber.d("Ship became spaceworthy, immediately triggering celebratory particles at (x=$shipCenterX, y=$shipCenterY)")
             lastParticleTriggerTime = System.currentTimeMillis()
             isSpaceworthy = true
@@ -111,7 +111,7 @@ class BuildView @Inject constructor(
             if (currentTime - lastParticleTriggerTime >= 1000) {
                 val shipCenterX = gameEngine.screenWidth / 2f
                 val shipCenterY = (buildModeManager.cockpitY + buildModeManager.engineY) / 2f
-                renderer.particleSystem.addCollectionParticles(shipCenterX, shipCenterY)
+                renderer.shipRendererInstance.addCollectionParticles(shipCenterX, shipCenterY)
                 lastParticleTriggerTime = currentTime
                 Timber.d("Periodic celebratory particles triggered at (x=$shipCenterX, y=$shipCenterY)")
             }
@@ -123,6 +123,8 @@ class BuildView @Inject constructor(
             isLaunchButtonVisible = isLaunchReady
             Timber.d("Forced launch button visibility update to $isLaunchReady in BuildView")
         }
+
+        renderer.drawStats(canvas, gameEngine, statusBarHeight, gameStateManager.gameState)
 
         Timber.d("Rendered frame in BuildView with parts count: ${buildModeManager.parts.size}, parts: ${buildModeManager.parts.map { "${it.type} at y=${it.y}" }}")
         shouldRedraw = false // Reset the redraw flag after drawing

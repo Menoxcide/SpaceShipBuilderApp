@@ -4,13 +4,13 @@ import timber.log.Timber
 import javax.inject.Inject
 
 class PowerUpManager @Inject constructor() {
-    var shieldActive = false // Changed to public
+    var shieldActive = false
     private var shieldEndTime = 0L
-    var speedBoostActive = false // Changed to public
+    var speedBoostActive = false
     private var speedBoostEndTime = 0L
-    var stealthActive = false // Changed to public
+    var stealthActive = false
     private var stealthEndTime = 0L
-    var invincibilityActive = false // Changed to public
+    var invincibilityActive = false
     private var invincibilityEndTime = 0L
 
     private val effectDuration = 10000L
@@ -70,5 +70,26 @@ class PowerUpManager @Inject constructor() {
         speedBoostActive = false
         stealthActive = false
         invincibilityActive = false
+    }
+
+    // Methods to get and set end times for state restoration
+    fun getShieldEndTime(): Long = shieldEndTime
+    fun setShieldEndTime(time: Long) {
+        shieldEndTime = time
+    }
+
+    fun getSpeedBoostEndTime(): Long = speedBoostEndTime
+    fun setSpeedBoostEndTime(time: Long) {
+        speedBoostEndTime = time
+    }
+
+    fun getStealthEndTime(): Long = stealthEndTime
+    fun setStealthEndTime(time: Long) {
+        stealthEndTime = time
+    }
+
+    fun getInvincibilityEndTime(): Long = invincibilityEndTime
+    fun setInvincibilityEndTime(time: Long) {
+        invincibilityEndTime = time
     }
 }
