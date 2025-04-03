@@ -4,6 +4,9 @@ import dagger.Lazy
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.random.Random
+import com.google.firebase.firestore.FirebaseFirestore
+import dagger.hilt.android.qualifiers.ApplicationContext
+import android.content.Context
 
 class FlightModeManager @Inject constructor(
     val shipManager: ShipManager,
@@ -13,8 +16,11 @@ class FlightModeManager @Inject constructor(
     private val audioManager: AudioManager,
     private val gameStateManager: GameStateManager,
     private val aiAssistant: AIAssistant,
-    private val gameEngine: Lazy<GameEngine>
+    private val gameEngine: Lazy<GameEngine>,
+    @ApplicationContext private val context: Context // Add context for Firebase
 ) {
+    private val db = FirebaseFirestore.getInstance() // Initialize FirebaseFirestore
+
     var currentScore = 0
     var highestScore = 0
 
@@ -231,78 +237,53 @@ class FlightModeManager @Inject constructor(
 
             if (shipManager.fuel <= 0 || shipManager.hp <= 0) {
                 Timber.d("Game over condition met. Fuel: ${shipManager.fuel}, HP: ${shipManager.hp}, Current score: $currentScore, Continues used: $continuesUsed, Ad continues used: $adContinuesUsed, Revives: ${shipManager.reviveCount}")
-                if (continuesUsed < maxContinues && adContinuesUsed < maxAdContinues) {
-                    gameStateManager.setGameState(
-                        GameState.GAME_OVER,
-                        shipManager.screenWidth,
-                        shipManager.screenHeight,
-                        ::resetFlightData,
-                        { _ -> },
-                        userId
-                    )
-                    gameStateManager.notifyGameOver(
-                        true,
-                        shipManager.reviveCount > 0,
-                        {
-                            Timber.d("Player chose to continue with ad")
-                            continuesUsed++
-                            adContinuesUsed++
-                            shipManager.hp = shipManager.maxHp
-                            shipManager.fuel = shipManager.fuelCapacity
-                            gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                            Timber.d("Player continued after ad, continues used: $continuesUsed, ad continues used: $adContinuesUsed")
-                        },
-                        {
-                            if (shipManager.reviveCount > 0) {
-                                Timber.d("Player chose to use revive")
-                                shipManager.reviveCount--
-                                continuesUsed++
-                                shipManager.hp = shipManager.maxHp
-                                shipManager.fuel = shipManager.fuelCapacity
-                                gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                                Timber.d("Player used a revive, revives remaining: ${shipManager.reviveCount}, continues used: $continuesUsed")
-                            } else {
-                                Timber.d("No revives available")
-                            }
-                        },
-                        {
-                            Timber.d("Player chose to return to build, saving score: $currentScore")
-                            // Save score to experience when player chooses to return to build
-                            if (currentScore > 0) {
-                                gameEngine.get().addExperience(currentScore)
-                                gameEngine.get().savePersistentData(userId)
-                                currentScore = 0
-                            }
-                            gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
-                            gameObjectManager.clearGameObjects()
-                            powerUpManager.resetPowerUpEffects()
-                            if (distanceTraveled > longestDistanceTraveled) {
-                                longestDistanceTraveled = distanceTraveled
-                                onLongestDistanceTraveledChange(longestDistanceTraveled)
-                            }
-                            if (currentScore > highestScore) {
-                                highestScore = currentScore
-                                onHighestScoreChange(highestScore)
-                            }
-                            distanceTraveled = 0f
-                            onDistanceTraveledChange(distanceTraveled)
-                            currentScore = 0
-                            shipManager.level = 1
-                            onLevelChange(shipManager.level)
-                            shipManager.hp = shipManager.maxHp
-                            shipManager.fuel = 0f
-                            shipManager.missileCount = shipManager.maxMissiles
-                            shipManager.lastMissileRechargeTime = System.currentTimeMillis()
-                            Timber.d("Player declined continue, returned to build screen, score saved")
-                        }
-                    )
-                } else {
-                    Timber.d("No continues left or max ad continues used, forcing return to build with score: $currentScore")
-                    // Save score to experience when no continues are left or max ad continues are used
+                gameStateManager.setGameState(
+                    GameState.GAME_OVER,
+                    shipManager.screenWidth,
+                    shipManager.screenHeight,
+                    ::resetFlightData,
+                    { _ -> },
+                    userId
+                )
+                val canContinueWithAd = adContinuesUsed < maxAdContinues
+                val canUseRevive = shipManager.reviveCount > 0
+                val onContinueWithAd: () -> Unit = {
+                    Timber.d("Player chose to continue with ad")
+                    continuesUsed++
+                    adContinuesUsed++
+                    shipManager.hp = shipManager.maxHp
+                    shipManager.fuel = shipManager.fuelCapacity
+                    gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                    Timber.d("Player continued after ad, continues used: $continuesUsed, ad continues used: $adContinuesUsed")
+                }
+                val onContinueWithRevive: () -> Unit = {
+                    if (shipManager.reviveCount > 0) {
+                        Timber.d("Player chose to use revive")
+                        shipManager.reviveCount--
+                        continuesUsed++
+                        shipManager.hp = shipManager.maxHp
+                        shipManager.fuel = shipManager.fuelCapacity
+                        gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                        Timber.d("Player used a revive, revives remaining: ${shipManager.reviveCount}, continues used: $continuesUsed")
+                    } else {
+                        Timber.d("No revives available")
+                    }
+                }
+                val onReturnToBuild: () -> Unit = {
+                    Timber.d("Player chose to return to build, saving score: $currentScore")
                     if (currentScore > 0) {
                         gameEngine.get().addExperience(currentScore)
                         gameEngine.get().savePersistentData(userId)
                         currentScore = 0
+                    }
+                    gameStateManager.resetPausedState()
+                    if (userId != null) {
+                        gameStateManager.savePausedStateToFirebase(userId)
+                        // Forcefully delete paused state document
+                        db.collection("users").document(userId).collection("gameState").document("pausedState")
+                            .delete()
+                            .addOnSuccessListener { Timber.d("Forced deletion of paused state in Firebase for userId: $userId") }
+                            .addOnFailureListener { e: Exception -> Timber.e(e, "Failed to force delete paused state: ${e.message}") }
                     }
                     gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
                     gameObjectManager.clearGameObjects()
@@ -324,8 +305,15 @@ class FlightModeManager @Inject constructor(
                     shipManager.fuel = 0f
                     shipManager.missileCount = shipManager.maxMissiles
                     shipManager.lastMissileRechargeTime = System.currentTimeMillis()
-                    Timber.d("No more continues available, returned to build screen, score saved")
+                    Timber.d("Player declined continue, returned to build screen, score saved, paused state cleared and forced deletion from Firebase")
                 }
+                gameStateManager.notifyGameOver(
+                    canContinue = canContinueWithAd,
+                    canUseRevive = canUseRevive,
+                    onContinueWithAd = onContinueWithAd,
+                    onContinueWithRevive = onContinueWithRevive,
+                    onReturnToBuild = onReturnToBuild
+                )
             }
         } catch (e: Exception) {
             Timber.e(e, "Exception in FlightModeManager.update: ${e.message}")
@@ -346,14 +334,11 @@ class FlightModeManager @Inject constructor(
     }
 
     fun saveScore() {
-        // Removed automatic saving of score to experience
-        // Score saving is now handled explicitly in the game-over logic
         Timber.d("saveScore called, but score will be saved only under specific conditions")
     }
 
     fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, userId: String?) {
         this.userId = userId ?: "default_user"
-        // Check if we're resuming from a pause
         val isResuming = gameStateManager.getPausedState() != null
         shipManager.launchShip(screenWidth, screenHeight, sortedParts, isResuming)
         gameStateManager.setGameState(GameState.FLIGHT, screenWidth, screenHeight, ::resetFlightData, { _ -> }, this.userId, gameEngine.get())
@@ -417,7 +402,6 @@ class FlightModeManager @Inject constructor(
         gameObjectManager.renderer.onDestroy()
     }
 
-    // Methods to get and set private fields for state saving/restoration
     fun getSessionDistanceTraveled(): Float = sessionDistanceTraveled
     fun setSessionDistanceTraveled(value: Float) {
         sessionDistanceTraveled = value

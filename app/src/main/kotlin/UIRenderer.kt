@@ -1,14 +1,12 @@
 package com.example.spaceshipbuilderapp
 
 import android.graphics.*
+import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
-import android.text.Layout
-import android.text.StaticLayout.Builder
 import timber.log.Timber
 import javax.inject.Inject
-import kotlin.math.min
-import kotlin.math.sin
+import kotlin.math.max
 
 class UIRenderer @Inject constructor() {
     private var screenWidth: Float = 0f
@@ -69,6 +67,17 @@ class UIRenderer @Inject constructor() {
         setShadowLayer(4f, 2f, 2f, Color.BLACK)
         style = Paint.Style.FILL_AND_STROKE
         strokeWidth = 2f
+        strokeCap = Paint.Cap.ROUND
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+    private val skillBonusPaint = Paint().apply {
+        isAntiAlias = true
+        textSize = 25f
+        color = Color.CYAN
+        textAlign = Paint.Align.LEFT
+        setShadowLayer(4f, 2f, 2f, Color.BLACK)
+        style = Paint.Style.FILL_AND_STROKE
+        strokeWidth = 1.5f
         strokeCap = Paint.Cap.ROUND
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
@@ -153,20 +162,23 @@ class UIRenderer @Inject constructor() {
             }
         } else if (gameState == GameState.BUILD) {
             val pausedState = gameEngine.gameStateManager.getPausedState()
-            val pausedStatsStartX = 20f
-            var pausedStatsY = statusBarHeight + 40f
+            Timber.d("UIRenderer drawStats: Paused state = $pausedState")
+            val statsStartX = 20f
+            var statsY = statusBarHeight + 40f
 
+            // Draw base stats (paused or default)
+            val stats: List<String>
             if (pausedState != null) {
-                // Display paused game state
-                val stats = listOf(
+                stats = listOf(
                     "Paused Game State:",
                     "HP: ${pausedState.hp.toInt()}/${gameEngine.maxHp.toInt()}",
                     "Fuel: ${pausedState.fuel.toInt()}/${gameEngine.fuelCapacity.toInt()}",
-                    "Missiles: ${pausedState.missileCount}/${gameEngine.flightModeManager.shipManager.maxMissiles}",
+                    "Missiles: ${pausedState.missileCount}/${gameEngine.flightModeManager.shipManager.maxMissiles}", // Changed to current/max
                     "Position: (${pausedState.shipX.toInt()}, ${pausedState.shipY.toInt()})",
                     "Score: ${pausedState.currentScore}",
                     "Distance: ${pausedState.distanceTraveled.toInt()}",
                     "Level: ${pausedState.level}",
+                    "Power-Up Duration: ${gameEngine.flightModeManager.powerUpManager.effectDuration / 1000}s",
                     "Power-Ups: " + listOfNotNull(
                         if (pausedState.shieldActive) "Shield" else null,
                         if (pausedState.speedBoostActive) "Speed" else null,
@@ -174,28 +186,85 @@ class UIRenderer @Inject constructor() {
                         if (pausedState.invincibilityActive) "Invincibility" else null
                     ).joinToString(", ").ifEmpty { "None" }
                 )
-
-                stats.forEach { stat ->
-                    canvas.drawText(stat, pausedStatsStartX, pausedStatsY, pausedStatsPaint)
-                    pausedStatsY += textHeight
-                }
             } else {
-                // Display default ship values
-                val defaultStats = listOf(
+                stats = listOf(
                     "Ship Stats (Default):",
                     "HP: ${gameEngine.maxHp.toInt()}/${gameEngine.maxHp.toInt()}",
                     "Fuel: 50/${gameEngine.fuelCapacity.toInt()}",
-                    "Missiles: ${gameEngine.flightModeManager.shipManager.maxMissiles}/${gameEngine.flightModeManager.shipManager.maxMissiles}",
+                    "Missiles: ${gameEngine.flightModeManager.shipManager.maxMissiles}/${gameEngine.flightModeManager.shipManager.maxMissiles}", // Changed to current/max, defaults to max/max
                     "Position: (${(screenWidth / 2f).toInt()}, ${(screenHeight / 2f).toInt()})",
                     "Score: 0",
                     "Distance: 0",
                     "Level: 1",
+                    "Power-Up Duration: ${gameEngine.flightModeManager.powerUpManager.effectDuration / 1000}s",
                     "Power-Ups: None"
                 )
+            }
 
-                defaultStats.forEach { stat ->
-                    canvas.drawText(stat, pausedStatsStartX, pausedStatsY, pausedStatsPaint)
-                    pausedStatsY += textHeight
+            stats.forEach { stat ->
+                canvas.drawText(stat, statsStartX, statsY, pausedStatsPaint)
+                statsY += textHeight
+            }
+
+            // Draw skill bonuses below base stats
+            statsY += 20f // Add some spacing between base stats and skill bonuses
+            canvas.drawText("Skill Bonuses:", statsStartX, statsY, skillBonusPaint)
+            statsY += 35f
+
+            val skills = gameEngine.skillManager.skills
+            val skillBonuses = mutableListOf<String>()
+
+            val projectileDamageLevel = skills["projectile_damage"] ?: 0
+            if (projectileDamageLevel > 0) {
+                skillBonuses.add("Projectile Damage: +${projectileDamageLevel * 10}%")
+            }
+
+            val firingRateLevel = skills["firing_rate"] ?: 0
+            if (firingRateLevel > 0) {
+                skillBonuses.add("Firing Rate: +${firingRateLevel * 5}%")
+            }
+
+            val homingMissilesLevel = skills["homing_missiles"] ?: 0
+            if (homingMissilesLevel > 0) {
+                skillBonuses.add("Homing Missiles: +$homingMissilesLevel")
+            }
+
+            val maxHpLevel = skills["max_hp"] ?: 0
+            if (maxHpLevel > 0) {
+                skillBonuses.add("Max HP: +${maxHpLevel * 10}%")
+            }
+
+            val hpRegenerationLevel = skills["hp_regeneration"] ?: 0
+            if (hpRegenerationLevel > 0) {
+                skillBonuses.add("HP Regen: +$hpRegenerationLevel HP/s")
+            }
+
+            val shieldStrengthLevel = skills["shield_strength"] ?: 0
+            if (shieldStrengthLevel > 0) {
+                skillBonuses.add("Shield Strength: +${shieldStrengthLevel * 20}%")
+            }
+
+            val speedBoostLevel = skills["speed_boost"] ?: 0
+            if (speedBoostLevel > 0) {
+                skillBonuses.add("Speed: +${speedBoostLevel * 5}%")
+            }
+
+            val fuelEfficiencyLevel = skills["fuel_efficiency"] ?: 0
+            if (fuelEfficiencyLevel > 0) {
+                skillBonuses.add("Fuel Efficiency: -${fuelEfficiencyLevel * 5}%")
+            }
+
+            val powerUpDurationLevel = skills["power_up_duration"] ?: 0
+            if (powerUpDurationLevel > 0) {
+                skillBonuses.add("Power-Up Duration: +${powerUpDurationLevel * 10}%")
+            }
+
+            if (skillBonuses.isEmpty()) {
+                canvas.drawText("None", statsStartX + 20f, statsY, skillBonusPaint)
+            } else {
+                skillBonuses.forEach { bonus ->
+                    canvas.drawText(bonus, statsStartX + 20f, statsY, skillBonusPaint)
+                    statsY += 30f
                 }
             }
         }
@@ -207,10 +276,13 @@ class UIRenderer @Inject constructor() {
 
         val padding = 20f
         val bottomOffset = aiAssistant.getBottomOffset()
-        val maxWidth = (screenWidth * 0.8f).toInt()
+        val maxWidth = (screenWidth * 0.9f).toInt() // 90% of screen width for wrapping
+
+        var totalHeightSoFar = 0f // Track the cumulative height of messages to position them correctly
 
         messages.forEachIndexed { index, message ->
-            val staticLayout = Builder.obtain(
+            // Create StaticLayout to wrap the text
+            val staticLayout = StaticLayout.Builder.obtain(
                 message,
                 0,
                 message.length,
@@ -222,39 +294,29 @@ class UIRenderer @Inject constructor() {
                 .setIncludePad(false)
                 .build()
 
-            val textWidth = staticLayout.getLineWidth(0).toFloat()
-            val lineCount = staticLayout.lineCount
+            // Calculate the maximum width of the wrapped text (for centering)
+            var maxLineWidth = 0f
+            for (i in 0 until staticLayout.lineCount) {
+                val lineWidth = staticLayout.getLineWidth(i)
+                maxLineWidth = max(maxLineWidth, lineWidth)
+            }
+
             val textHeight = staticLayout.height.toFloat()
-            val overlayWidth = min(textWidth + 2 * padding, maxWidth.toFloat())
-            val overlayHeight = textHeight + 2 * padding
-            val overlayX = (screenWidth - overlayWidth) / 2f
-            val overlayY = screenHeight - bottomOffset - overlayHeight - (index * (overlayHeight + padding))
+            // Calculate the position for the text (no overlay, so no overlayWidth/overlayHeight)
+            val textX = (screenWidth - maxLineWidth) / 2f
+            val textY = screenHeight - bottomOffset - textHeight - totalHeightSoFar - (index * padding)
 
-            canvas.drawRect(
-                overlayX,
-                overlayY,
-                overlayX + overlayWidth,
-                overlayY + overlayHeight,
-                aiOverlayPaint
-            )
-
-            val pulse = (sin(animationTime / 500f) + 1) / 2
-            aiPulsePaint.alpha = (pulse * 100).toInt() + 50
-            canvas.drawRect(
-                overlayX,
-                overlayY,
-                overlayX + overlayWidth,
-                overlayY + overlayHeight,
-                aiPulsePaint
-            )
-
+            // Draw the text directly without a background box
             canvas.save()
-            canvas.translate(overlayX + padding, overlayY + padding)
+            canvas.translate(textX, textY)
             staticLayout.draw(canvas)
             canvas.restore()
 
+            // Update the total height for the next message
+            totalHeightSoFar += textHeight + padding
+
             if (BuildConfig.DEBUG) {
-                Timber.d("Drawing AI message '$message' at (x=$overlayX, y=$overlayY) with width=$overlayWidth, height=$overlayHeight, lines=$lineCount")
+                Timber.d("Drawing AI message '$message' at (x=$textX, y=$textY) with width=$maxLineWidth, height=$textHeight, lines=${staticLayout.lineCount}")
             }
         }
     }

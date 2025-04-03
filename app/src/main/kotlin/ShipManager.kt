@@ -31,22 +31,9 @@ class ShipManager @Inject constructor(
         }
 
     var missileCount = 3
-        get() {
-            return field.coerceAtMost(maxMissiles)
-        }
-        set(value) {
-            field = value.coerceIn(0, maxMissiles)
-        }
-    var maxMissiles = 3
-        get() {
-            val baseMissiles = when (selectedShipSet) {
-                0 -> 3
-                1 -> 4
-                2 -> 5
-                else -> 3
-            }
-            return baseMissiles + (skillManager.skills["homing_missiles"] ?: 0)
-        }
+        get() = field.coerceAtMost(maxMissiles)
+        set(value) { field = value.coerceIn(0, maxMissiles) }
+    var maxMissiles = 3 // Remove custom getter, managed by GameEngine
 
     var shipColor: String = "default"
     var selectedShipSet: Int = 0
@@ -72,14 +59,10 @@ class ShipManager @Inject constructor(
     var screenHeight: Float = 0f
 
     var reviveCount: Int = 0
-        set(value) {
-            field = value.coerceIn(0, 3)
-        }
+        set(value) { field = value.coerceIn(0, 3) }
 
     var destroyAllCharges: Int = 0
-        set(value) {
-            field = value.coerceIn(0, 3)
-        }
+        set(value) { field = value.coerceIn(0, 3) }
 
     fun updateUnlockedShipSets(highestLevel: Int, starsCollected: Int) {
         unlockedShipSets.clear()
@@ -119,12 +102,10 @@ class ShipManager @Inject constructor(
         currentSpeed = baseSpeed
         baseProjectileSpeed = 10f * (1 + (skillManager.skills["projectile_damage"] ?: 0) * 0.10f)
         currentProjectileSpeed = baseProjectileSpeed
-        // Only reset HP and fuel if not resuming from a pause
         if (!isResuming) {
             hp = maxHp
             fuel = fuelCapacity
         }
-
         when (selectedShipSet) {
             1 -> {
                 baseSpeed *= 1.1f
@@ -143,7 +124,6 @@ class ShipManager @Inject constructor(
     }
 
     fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, isResuming: Boolean = false) {
-        // Set initial fuel and HP to 50 and maxHp only if not resuming
         if (!isResuming) {
             fuel = 50f
             hp = maxHp
@@ -174,7 +154,6 @@ class ShipManager @Inject constructor(
         }
 
         applyShipColorEffects()
-        // Only reset missile count if not resuming from a pause
         if (!isResuming) {
             missileCount = maxMissiles
         }

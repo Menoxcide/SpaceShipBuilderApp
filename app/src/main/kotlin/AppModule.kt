@@ -134,7 +134,8 @@ object AppModule {
         audioManager: AudioManager,
         gameStateManager: GameStateManager,
         aiAssistant: AIAssistant,
-        gameEngine: Lazy<GameEngine>
+        gameEngine: Lazy<GameEngine>,
+        @ApplicationContext context: Context // Add context parameter
     ): FlightModeManager = FlightModeManager(
         shipManager,
         gameObjectManager,
@@ -143,7 +144,8 @@ object AppModule {
         audioManager,
         gameStateManager,
         aiAssistant,
-        gameEngine
+        gameEngine,
+        context // Pass context to constructor
     )
 
     @Provides

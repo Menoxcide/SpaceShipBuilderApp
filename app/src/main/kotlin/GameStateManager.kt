@@ -14,18 +14,16 @@ class GameStateManager @Inject constructor() {
     private var onLaunchListener: ((Boolean) -> Unit)? = null
     private var onGameOverListener: ((Boolean, Boolean, () -> Unit, () -> Unit, () -> Unit) -> Unit)? = null
     private var pausedState: PausedGameState? = null
+    private var shouldLoadPausedState: Boolean = false // New flag
     private val db = FirebaseFirestore.getInstance()
 
-    // Data class to hold the paused game state
     data class PausedGameState(
-        // ShipManager state
         val shipX: Float,
         val shipY: Float,
         val hp: Float,
         val fuel: Float,
         val missileCount: Int,
         val lastMissileRechargeTime: Long,
-        // PowerUpManager state
         val shieldActive: Boolean,
         val shieldEndTime: Long,
         val speedBoostActive: Boolean,
@@ -34,7 +32,6 @@ class GameStateManager @Inject constructor() {
         val stealthEndTime: Long,
         val invincibilityActive: Boolean,
         val invincibilityEndTime: Long,
-        // GameObjectManager state
         val powerUps: List<PowerUp>,
         val asteroids: List<Asteroid>,
         val projectiles: List<Projectile>,
@@ -42,7 +39,6 @@ class GameStateManager @Inject constructor() {
         val enemyProjectiles: List<Projectile>,
         val homingProjectiles: List<HomingProjectile>,
         val boss: BossShip?,
-        // FlightModeManager state
         val currentScore: Int,
         val distanceTraveled: Float,
         val sessionDistanceTraveled: Float,
@@ -53,7 +49,6 @@ class GameStateManager @Inject constructor() {
         val levelUpAnimationStartTime: Long,
         val continuesUsed: Int
     ) {
-        // Convert to a map for Firebase storage
         fun toMap(): Map<String, Any?> {
             return mapOf(
                 "shipX" to shipX,
@@ -90,7 +85,6 @@ class GameStateManager @Inject constructor() {
         }
 
         companion object {
-            // Convert from a map (loaded from Firebase) to PausedGameState
             fun fromMap(map: Map<String, Any?>, gameObjectManager: GameObjectManager): PausedGameState {
                 return PausedGameState(
                     shipX = (map["shipX"] as? Double)?.toFloat() ?: 0f,
@@ -143,8 +137,8 @@ class GameStateManager @Inject constructor() {
         // Save state when pausing (FLIGHT -> BUILD)
         if (gameState == GameState.FLIGHT && newState == GameState.BUILD && gameEngine != null) {
             pausedState = saveGameState(gameEngine)
-            Timber.d("Saved game state on pause: $pausedState")
-            // Save the paused state to Firebase
+            shouldLoadPausedState = true // Set flag to true when pausing
+            Timber.d("Saved game state on pause: $pausedState, shouldLoadPausedState=$shouldLoadPausedState")
             if (userId != null) {
                 savePausedStateToFirebase(userId)
             }
@@ -153,14 +147,24 @@ class GameStateManager @Inject constructor() {
         gameState = newState
         when (newState) {
             GameState.FLIGHT -> {
-                // Restore state if resuming from a pause
-                if (pausedState != null && gameEngine != null) {
+                if (shouldLoadPausedState && pausedState != null && gameEngine != null) {
                     restoreGameState(gameEngine, pausedState!!)
                     Timber.d("Restored game state on resume")
                 }
                 onLaunchListener?.invoke(true)
             }
             GameState.BUILD -> {
+                // Only clear pausedState and flag if coming from GAME_OVER
+                if (gameState == GameState.GAME_OVER) {
+                    Timber.d("Clearing paused state and flag on transition to BUILD from GAME_OVER")
+                    pausedState = null
+                    shouldLoadPausedState = false
+                    if (userId != null) {
+                        savePausedStateToFirebase(userId)
+                    }
+                } else {
+                    Timber.d("Preserving paused state on transition to BUILD: $pausedState, shouldLoadPausedState=$shouldLoadPausedState")
+                }
                 onLaunchListener?.invoke(false)
                 resetFlightData()
                 if (userId != null) {
@@ -168,8 +172,9 @@ class GameStateManager @Inject constructor() {
                 }
             }
             GameState.GAME_OVER -> {
-                // Clear paused state on game over
+                // Clear paused state and flag on game over
                 pausedState = null
+                shouldLoadPausedState = false
                 if (userId != null) {
                     savePausedStateToFirebase(userId)
                 }
@@ -179,14 +184,12 @@ class GameStateManager @Inject constructor() {
 
     private fun saveGameState(gameEngine: GameEngine): PausedGameState {
         return PausedGameState(
-            // ShipManager state
             shipX = gameEngine.shipX,
             shipY = gameEngine.shipY,
             hp = gameEngine.hp,
             fuel = gameEngine.fuel,
             missileCount = gameEngine.missileCount,
             lastMissileRechargeTime = gameEngine.flightModeManager.shipManager.lastMissileRechargeTime,
-            // PowerUpManager state
             shieldActive = gameEngine.shieldActive,
             shieldEndTime = gameEngine.flightModeManager.powerUpManager.getShieldEndTime(),
             speedBoostActive = gameEngine.speedBoostActive,
@@ -195,7 +198,6 @@ class GameStateManager @Inject constructor() {
             stealthEndTime = gameEngine.flightModeManager.powerUpManager.getStealthEndTime(),
             invincibilityActive = gameEngine.invincibilityActive,
             invincibilityEndTime = gameEngine.flightModeManager.powerUpManager.getInvincibilityEndTime(),
-            // GameObjectManager state
             powerUps = gameEngine.powerUps.toList(),
             asteroids = gameEngine.asteroids.toList(),
             projectiles = gameEngine.projectiles.toList(),
@@ -203,7 +205,6 @@ class GameStateManager @Inject constructor() {
             enemyProjectiles = gameEngine.enemyProjectiles.toList(),
             homingProjectiles = gameEngine.homingProjectiles.toList(),
             boss = gameEngine.getBoss(),
-            // FlightModeManager state
             currentScore = gameEngine.currentScore,
             distanceTraveled = gameEngine.distanceTraveled,
             sessionDistanceTraveled = gameEngine.flightModeManager.getSessionDistanceTraveled(),
@@ -216,16 +217,13 @@ class GameStateManager @Inject constructor() {
         )
     }
 
-    private fun restoreGameState(gameEngine: GameEngine, state: PausedGameState) {
-        // Restore ShipManager state
+    fun restoreGameState(gameEngine: GameEngine, state: PausedGameState) {
         gameEngine.shipX = state.shipX
         gameEngine.shipY = state.shipY
         gameEngine.hp = state.hp
         gameEngine.fuel = state.fuel
         gameEngine.missileCount = state.missileCount
         gameEngine.flightModeManager.shipManager.lastMissileRechargeTime = state.lastMissileRechargeTime
-
-        // Restore PowerUpManager state
         gameEngine.shieldActive = state.shieldActive
         gameEngine.flightModeManager.powerUpManager.setShieldEndTime(state.shieldEndTime)
         gameEngine.speedBoostActive = state.speedBoostActive
@@ -234,8 +232,6 @@ class GameStateManager @Inject constructor() {
         gameEngine.flightModeManager.powerUpManager.setStealthEndTime(state.stealthEndTime)
         gameEngine.invincibilityActive = state.invincibilityActive
         gameEngine.flightModeManager.powerUpManager.setInvincibilityEndTime(state.invincibilityEndTime)
-
-        // Restore GameObjectManager state
         gameEngine.flightModeManager.gameObjectManager.powerUps.clear()
         gameEngine.flightModeManager.gameObjectManager.powerUps.addAll(state.powerUps)
         gameEngine.flightModeManager.gameObjectManager.asteroids.clear()
@@ -249,8 +245,6 @@ class GameStateManager @Inject constructor() {
         gameEngine.flightModeManager.gameObjectManager.homingProjectiles.clear()
         gameEngine.flightModeManager.gameObjectManager.homingProjectiles.addAll(state.homingProjectiles)
         gameEngine.flightModeManager.gameObjectManager.setBoss(state.boss)
-
-        // Restore FlightModeManager state
         gameEngine.currentScore = state.currentScore
         gameEngine.distanceTraveled = state.distanceTraveled
         gameEngine.flightModeManager.setSessionDistanceTraveled(state.sessionDistanceTraveled)
@@ -264,35 +258,50 @@ class GameStateManager @Inject constructor() {
 
     fun getPausedState(): PausedGameState? = pausedState
 
+    fun shouldLoadPausedState(): Boolean = shouldLoadPausedState // Getter for the flag
+
     suspend fun loadPausedStateFromFirebase(userId: String, gameObjectManager: GameObjectManager) {
         try {
             Timber.d("Loading paused state for userId: $userId")
             val doc = db.collection("users").document(userId).collection("gameState").document("pausedState").get().await()
             if (doc.exists()) {
-                pausedState = PausedGameState.fromMap(doc.data!!, gameObjectManager)
-                Timber.d("Loaded paused state from Firebase: $pausedState")
+                val data = doc.data!!
+                shouldLoadPausedState = data["shouldLoadPausedState"] as? Boolean ?: false
+                if (shouldLoadPausedState) {
+                    pausedState = PausedGameState.fromMap(data, gameObjectManager)
+                    Timber.d("Loaded paused state from Firebase: $pausedState, shouldLoadPausedState=$shouldLoadPausedState")
+                } else {
+                    pausedState = null
+                    Timber.d("Paused state exists but shouldLoadPausedState is false, not loading")
+                }
             } else {
                 pausedState = null
+                shouldLoadPausedState = false
                 Timber.d("No paused state found for userId: $userId")
             }
         } catch (e: Exception) {
             Timber.e(e, "Failed to load paused state from Firebase: ${e.message}")
             pausedState = null
+            shouldLoadPausedState = false
         }
     }
 
-    private fun savePausedStateToFirebase(userId: String) {
+    fun savePausedStateToFirebase(userId: String) {
         try {
-            if (pausedState != null) {
+            val data = mutableMapOf<String, Any?>(
+                "shouldLoadPausedState" to shouldLoadPausedState
+            )
+            pausedState?.toMap()?.let { data.putAll(it) }
+
+            if (shouldLoadPausedState && pausedState != null) {
                 db.collection("users").document(userId).collection("gameState").document("pausedState")
-                    .set(pausedState!!.toMap())
-                    .addOnSuccessListener { Timber.d("Saved paused state to Firebase for userId: $userId") }
+                    .set(data)
+                    .addOnSuccessListener { Timber.d("Saved paused state to Firebase for userId: $userId, shouldLoadPausedState=$shouldLoadPausedState") }
                     .addOnFailureListener { e -> Timber.e(e, "Failed to save paused state to Firebase: ${e.message}") }
             } else {
-                // If there is no paused state, delete the document to indicate no paused game
                 db.collection("users").document(userId).collection("gameState").document("pausedState")
-                    .delete()
-                    .addOnSuccessListener { Timber.d("Cleared paused state in Firebase for userId: $userId") }
+                    .set(mapOf("shouldLoadPausedState" to false)) // Clear with flag only
+                    .addOnSuccessListener { Timber.d("Cleared paused state in Firebase for userId: $userId, shouldLoadPausedState=$shouldLoadPausedState") }
                     .addOnFailureListener { e -> Timber.e(e, "Failed to clear paused state in Firebase: ${e.message}") }
             }
         } catch (e: Exception) {
@@ -321,5 +330,11 @@ class GameStateManager @Inject constructor() {
         onReturnToBuild: () -> Unit
     ) {
         onGameOverListener?.invoke(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild)
+    }
+
+    fun resetPausedState() {
+        pausedState = null
+        shouldLoadPausedState = false
+        Timber.d("Paused state and flag reset to null/false")
     }
 }

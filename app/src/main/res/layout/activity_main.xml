@@ -2,12 +2,15 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/transparent">
+    android:background="@android:color/transparent"
+    android:fitsSystemWindows="true">
 
     <FrameLayout
         android:id="@+id/gameContainer"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false">
 
         <com.example.spaceshipbuilderapp.BuildView
             android:id="@+id/build_view"
@@ -117,39 +120,37 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Pause Button: Positioned in the top-right corner -->
+        <!-- Pause Button: Fixed 64x64dp with increased right margin -->
         <Button
             android:id="@+id/pauseButton"
-            android:layout_width="100dp"
-            android:layout_height="48dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
             android:layout_gravity="top|end"
             android:layout_margin="16dp"
-            android:backgroundTint="@color/holo_orange_dark"
-            android:text="PAUSE"
-            android:textColor="@android:color/white"
-            android:textSize="16sp"
-            android:paddingStart="16dp"
+            android:layout_marginEnd="32dp"
+            android:background="@android:color/transparent"
+            android:drawableStart="@drawable/pause_icon"
+            android:contentDescription="Pause"
+            android:paddingStart="8dp"
             android:paddingEnd="16dp"
             android:paddingTop="8dp"
             android:paddingBottom="8dp"
             android:visibility="gone"
             android:elevation="10dp" />
 
-        <!-- Destroy All Button: Positioned in the bottom-right corner -->
+        <!-- Destroy All Button: 64x64dp, scaled programmatically, matching right margin -->
         <Button
             android:id="@+id/destroyAllButton"
-            android:layout_width="100dp"
-            android:layout_height="48dp"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="16dp"
-            android:backgroundTint="@color/holo_red_dark"
-            android:text="DESTROY ALL (0/3)"
-            android:textColor="@android:color/white"
-            android:textSize="16sp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_below="@id/pauseButton"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="32dp"
+            android:background="@android:color/transparent"
+            android:drawableStart="@drawable/destroy_all"
+            android:contentDescription="Destroy All"
+            android:padding="8dp"
             android:visibility="gone"
             android:elevation="10dp" />
     </FrameLayout>

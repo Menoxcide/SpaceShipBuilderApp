@@ -31,6 +31,7 @@ class BuildView @Inject constructor(
     private var isLaunchButtonVisible = false
     private var isSpaceworthy = false
     private var shouldRedraw = false // Flag to control redraws
+    private var isInitialized = false // New flag to delay drawing until ready
 
     init {
         if (BuildConfig.DEBUG) Timber.d("BuildView initialized")
@@ -66,9 +67,16 @@ class BuildView @Inject constructor(
         return success
     }
 
+    // New method to signal initialization completion
+    fun setInitialized() {
+        isInitialized = true
+        invalidate()
+        Timber.d("BuildView initialized, triggering redraw")
+    }
+
     override fun onDraw(canvas: Canvas) {
-        if (gameStateManager.gameState != GameState.BUILD || !isVisible) {
-            Timber.w("onDraw skipped: gameState=${gameStateManager.gameState}, visibility=$isVisible")
+        if (!isInitialized || gameStateManager.gameState != GameState.BUILD || !isVisible) {
+            Timber.w("onDraw skipped: isInitialized=$isInitialized, gameState=${gameStateManager.gameState}, visibility=$isVisible")
             shouldRedraw = false
             return
         }
@@ -124,6 +132,9 @@ class BuildView @Inject constructor(
             Timber.d("Forced launch button visibility update to $isLaunchReady in BuildView")
         }
 
+        // Log the paused state before rendering stats
+        val pausedState = gameStateManager.getPausedState()
+        Timber.d("BuildView onDraw: Paused state = $pausedState")
         renderer.drawStats(canvas, gameEngine, statusBarHeight, gameStateManager.gameState)
 
         Timber.d("Rendered frame in BuildView with parts count: ${buildModeManager.parts.size}, parts: ${buildModeManager.parts.map { "${it.type} at y=${it.y}" }}")

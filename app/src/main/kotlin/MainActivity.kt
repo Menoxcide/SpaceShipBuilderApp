@@ -235,75 +235,89 @@ class MainActivity : AppCompatActivity() {
                 Timber.d("Initializing game with default userId: $userId")
                 gameEngine.loadUserData(userId!!)
                 highscoreManager.initialize(userId!!)
+                // Load paused state from Firebase based on the flag
+                gameStateManager.loadPausedStateFromFirebase(userId!!, gameEngine.flightModeManager.gameObjectManager)
+                Timber.d("Paused state after loading: ${gameStateManager.getPausedState()}, shouldLoadPausedState=${gameStateManager.shouldLoadPausedState()}")
+
+                // Apply paused state to GameEngine if flag is true and paused state exists
+                if (gameStateManager.shouldLoadPausedState() && gameStateManager.getPausedState() != null) {
+                    gameStateManager.restoreGameState(gameEngine, gameStateManager.getPausedState()!!)
+                    Timber.d("Applied paused state to GameEngine on initial load")
+                } else {
+                    Timber.d("No paused state loaded or flag is false, using default stats")
+                }
+
+                binding.buildView.post {
+                    binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
+                    partButtons = mapOf(
+                        binding.cockpitImage to Pair("cockpit", binding.buildView.renderer.cockpitBitmap),
+                        binding.fuelTankImage to Pair("fuel_tank", binding.buildView.renderer.fuelTankBitmap),
+                        binding.engineImage to Pair("engine", binding.buildView.renderer.engineBitmap)
+                    )
+                    binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
+                    binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
+                    binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
+                    binding.cockpitImage.visibility = View.VISIBLE
+                    binding.fuelTankImage.visibility = View.VISIBLE
+                    binding.engineImage.visibility = View.VISIBLE
+                    binding.selectionPanel.visibility = View.VISIBLE
+                    Timber.d("Selection panel visibility: ${binding.selectionPanel.isVisible}, height: ${binding.selectionPanel.height}")
+                    Timber.d("Cockpit image visibility: ${binding.cockpitImage.isVisible}, width: ${binding.cockpitImage.width}, height: ${binding.cockpitImage.height}")
+                    Timber.d("Fuel tank image visibility: ${binding.fuelTankImage.isVisible}, width: ${binding.fuelTankImage.width}, height: ${binding.fuelTankImage.height}")
+                    Timber.d("Engine image visibility: ${binding.engineImage.isVisible}, width: ${binding.engineImage.width}, height: ${binding.engineImage.height}")
+                    setupListeners()
+                    setupShipSpinner()
+                    // Signal BuildView that initialization is complete
+                    binding.buildView.setInitialized()
+                }
+
+                gameEngine.setLaunchListener { isLaunching ->
+                    binding.selectionPanel.isVisible = !isLaunching
+                    binding.buildView.isVisible = !isLaunching
+                    binding.buildView.isEnabled = !isLaunching
+                    binding.flightView.isVisible = isLaunching
+                    binding.flightView.isEnabled = isLaunching
+                    binding.playerNameInput.isVisible = false
+                    binding.navigationButtons.isVisible = !isLaunching
+                    binding.pauseButton.isVisible = isLaunching
+                    binding.destroyAllButton.isVisible = isLaunching && gameEngine.destroyAllCharges > 0
+                    binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
+                    if (isLaunching) {
+                        binding.flightView.requestFocus()
+                        binding.flightView.setGameMode(GameState.FLIGHT)
+                        binding.flightView.postInvalidate()
+                        Timber.d("FlightView focused: ${binding.flightView.isFocused}, invalidated")
+                    } else {
+                        binding.buildView.setOnTouchListener(placedPartTouchListener)
+                        binding.flightView.setGameMode(GameState.BUILD)
+                        binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
+                        Timber.d("BuildView focused: ${binding.buildView.isFocused}")
+                        setupShipSpinner()
+                        binding.buildView.invalidate()
+                    }
+                    val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && buildModeManager.parts.size == 3 && !isLaunching
+                    setLaunchButtonVisibility(isLaunchReady)
+                    Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${buildModeManager.parts.size}, isLaunching=$isLaunching")
+                    if (!isLaunchReady) {
+                        Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight)}")
+                    }
+                }
+
+                gameEngine.setGameOverListener { canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild ->
+                    Timber.d("Game over listener triggered: canContinue=$canContinue, canUseRevive=$canUseRevive")
+                    if (canContinue || canUseRevive) {
+                        showContinueDialog(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild)
+                    } else {
+                        Timber.d("No continue options available, executing return to build")
+                        onReturnToBuild()
+                    }
+                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize user data")
                 showToast(R.string.error_userdata, e.message ?: "Unknown error")
                 userId = "default_user"
                 gameEngine.playerName = "Player"
-            }
-
-            binding.buildView.post {
-                binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
-                partButtons = mapOf(
-                    binding.cockpitImage to Pair("cockpit", binding.buildView.renderer.cockpitBitmap),
-                    binding.fuelTankImage to Pair("fuel_tank", binding.buildView.renderer.fuelTankBitmap),
-                    binding.engineImage to Pair("engine", binding.buildView.renderer.engineBitmap)
-                )
-                binding.cockpitImage.setImageBitmap(binding.buildView.renderer.cockpitBitmap)
-                binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
-                binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
-                binding.cockpitImage.visibility = View.VISIBLE
-                binding.fuelTankImage.visibility = View.VISIBLE
-                binding.engineImage.visibility = View.VISIBLE
-                binding.selectionPanel.visibility = View.VISIBLE
-                Timber.d("Selection panel visibility: ${binding.selectionPanel.isVisible}, height: ${binding.selectionPanel.height}")
-                Timber.d("Cockpit image visibility: ${binding.cockpitImage.isVisible}, width: ${binding.cockpitImage.width}, height: ${binding.cockpitImage.height}")
-                Timber.d("Fuel tank image visibility: ${binding.fuelTankImage.isVisible}, width: ${binding.fuelTankImage.width}, height: ${binding.fuelTankImage.height}")
-                Timber.d("Engine image visibility: ${binding.engineImage.isVisible}, width: ${binding.engineImage.width}, height: ${binding.engineImage.height}")
-                setupListeners()
-                setupShipSpinner()
-            }
-
-            gameEngine.setLaunchListener { isLaunching ->
-                binding.selectionPanel.isVisible = !isLaunching
-                binding.buildView.isVisible = !isLaunching
-                binding.buildView.isEnabled = !isLaunching
-                binding.flightView.isVisible = isLaunching
-                binding.flightView.isEnabled = isLaunching
-                binding.playerNameInput.isVisible = false
-                binding.navigationButtons.isVisible = !isLaunching
-                binding.pauseButton.isVisible = isLaunching
-                binding.destroyAllButton.isVisible = isLaunching && gameEngine.destroyAllCharges > 0
-                binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
-                if (isLaunching) {
-                    binding.flightView.requestFocus()
-                    binding.flightView.setGameMode(GameState.FLIGHT)
-                    binding.flightView.postInvalidate()
-                    Timber.d("FlightView focused: ${binding.flightView.isFocused}, invalidated")
-                } else {
-                    // Do not save score here when switching to build mode (paused state)
-                    binding.buildView.setOnTouchListener(placedPartTouchListener)
-                    binding.flightView.setGameMode(GameState.BUILD)
-                    binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
-                    Timber.d("BuildView focused: ${binding.buildView.isFocused}")
-                    setupShipSpinner()
-                }
-                val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && buildModeManager.parts.size == 3 && !isLaunching
-                setLaunchButtonVisibility(isLaunchReady)
-                Timber.d("Launch button visibility set to $isLaunchReady, isSpaceworthy=${gameEngine.isShipSpaceworthy(gameEngine.screenHeight)}, partsSize=${buildModeManager.parts.size}, isLaunching=$isLaunching")
-                if (!isLaunchReady) {
-                    Timber.d("Spaceworthiness failure: ${gameEngine.getSpaceworthinessFailureReason(gameEngine.screenHeight)}")
-                }
-            }
-
-            gameEngine.setGameOverListener { canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild ->
-                Timber.d("Game over listener triggered: canContinue=$canContinue, canUseRevive=$canUseRevive")
-                if (canContinue || canUseRevive) {
-                    showContinueDialog(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild)
-                } else {
-                    Timber.d("No continue options available, executing return to build")
-                    onReturnToBuild()
-                }
+                binding.buildView.setInitialized() // Ensure BuildView renders even on failure
             }
         }
     }
@@ -376,6 +390,7 @@ class MainActivity : AppCompatActivity() {
                     binding.fuelTankImage.setImageBitmap(binding.buildView.renderer.fuelTankBitmap)
                     binding.engineImage.setImageBitmap(binding.buildView.renderer.engineBitmap)
                     binding.buildView.invalidate()
+                    Timber.d("Ship set changed to $position, updated sprites and invalidated BuildView")
                 } else {
                     binding.shipSpinner.setSelection(gameEngine.selectedShipSet)
                     val requirements = when (position) {

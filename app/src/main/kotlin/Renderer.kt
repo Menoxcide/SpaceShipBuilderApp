@@ -12,9 +12,11 @@ class Renderer @Inject constructor(
     private val gameObjectRenderer: GameObjectRenderer,
     private val uiRenderer: UIRenderer
 ) {
-    val cockpitBitmap: Bitmap get() = bitmapManager.getShipSet(0).cockpit
-    val fuelTankBitmap: Bitmap get() = bitmapManager.getShipSet(0).fuelTank
-    val engineBitmap: Bitmap get() = bitmapManager.getShipSet(0).engine
+    private var currentShipSet: Int = 0 // Track current ship set
+
+    val cockpitBitmap: Bitmap get() = bitmapManager.getShipSet(currentShipSet).cockpit
+    val fuelTankBitmap: Bitmap get() = bitmapManager.getShipSet(currentShipSet).fuelTank
+    val engineBitmap: Bitmap get() = bitmapManager.getShipSet(currentShipSet).engine
 
     val cockpitPlaceholderBitmap: Bitmap get() = bitmapManager.createPlaceholderBitmap(cockpitBitmap)
     val fuelTankPlaceholderBitmap: Bitmap get() = bitmapManager.createPlaceholderBitmap(fuelTankBitmap)
@@ -24,7 +26,9 @@ class Renderer @Inject constructor(
     val shipRendererInstance: ShipRenderer get() = shipRenderer
 
     fun setShipSet(shipSet: Int) {
+        currentShipSet = shipSet
         Timber.d("Renderer ship set updated to: $shipSet")
+        // No need to reload bitmaps here; they are fetched dynamically via getters
     }
 
     fun updateAnimationFrame() {

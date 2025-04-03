@@ -13,7 +13,8 @@ class PowerUpManager @Inject constructor() {
     var invincibilityActive = false
     private var invincibilityEndTime = 0L
 
-    private val effectDuration = 10000L
+    // Make effectDuration a variable with a default base value, accessible publicly
+    var effectDuration = 10000L // Base duration of 10 seconds
 
     fun applyPowerUpEffect(powerUpType: String, shipManager: ShipManager) {
         val currentTime = System.currentTimeMillis()
@@ -22,23 +23,23 @@ class PowerUpManager @Inject constructor() {
                 shieldActive = true
                 shieldEndTime = currentTime + effectDuration
                 shipManager.currentFuelConsumption = shipManager.currentFuelConsumption / 2f
-                Timber.d("Collected shield power-up")
+                Timber.d("Collected shield power-up, duration: $effectDuration ms")
             }
             "speed" -> {
                 speedBoostActive = true
                 speedBoostEndTime = currentTime + effectDuration
                 shipManager.currentSpeed = shipManager.currentSpeed * 5f
-                Timber.d("Collected speed boost power-up")
+                Timber.d("Collected speed boost power-up, duration: $effectDuration ms")
             }
             "stealth" -> {
                 stealthActive = true
                 stealthEndTime = currentTime + effectDuration
-                Timber.d("Collected stealth power-up")
+                Timber.d("Collected stealth power-up, duration: $effectDuration ms")
             }
             "invincibility" -> {
                 invincibilityActive = true
                 invincibilityEndTime = currentTime + effectDuration
-                Timber.d("Collected invincibility power-up")
+                Timber.d("Collected invincibility power-up, duration: $effectDuration ms")
             }
         }
     }
@@ -70,6 +71,7 @@ class PowerUpManager @Inject constructor() {
         speedBoostActive = false
         stealthActive = false
         invincibilityActive = false
+        Timber.d("Power-up effects reset")
     }
 
     // Methods to get and set end times for state restoration

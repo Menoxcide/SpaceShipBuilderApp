@@ -1,6 +1,7 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.RectF
 import android.util.AttributeSet
@@ -11,6 +12,7 @@ import android.widget.FrameLayout
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
+import android.graphics.drawable.BitmapDrawable
 
 @AndroidEntryPoint
 class FlightView @Inject constructor(
@@ -65,18 +67,24 @@ class FlightView @Inject constructor(
 
     fun updateDestroyAllButton(charges: Int, gameState: GameState) {
         val destroyAllButton = rootView.findViewById<Button>(R.id.destroyAllButton)
-        destroyAllButton.text = "DESTROY ALL ($charges/3)"
         destroyAllButton.isEnabled = charges > 0
         destroyAllButton.visibility = if (gameState == GameState.FLIGHT && charges > 0) View.VISIBLE else View.GONE
-        Timber.d("Updated destroyAllButton: visibility=${destroyAllButton.visibility}, text=${destroyAllButton.text}, enabled=${destroyAllButton.isEnabled}")
+
+        // Scale the destroy_all drawable to 64x64dp
+        val drawable = resources.getDrawable(R.drawable.destroy_all, null)
+        val bitmap = (drawable as BitmapDrawable).bitmap
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, true)
+        val scaledDrawable = BitmapDrawable(resources, scaledBitmap)
+        destroyAllButton.setCompoundDrawablesWithIntrinsicBounds(scaledDrawable, null, null, null)
+
+        Timber.d("Updated destroyAllButton: visibility=${destroyAllButton.visibility}, enabled=${destroyAllButton.isEnabled}, charges=$charges")
     }
 
     fun updatePauseButton(gameState: GameState) {
         val pauseButton = rootView.findViewById<Button>(R.id.pauseButton)
-        pauseButton.text = "PAUSE"
         val shouldBeVisible = gameState == GameState.FLIGHT
         pauseButton.visibility = if (shouldBeVisible) View.VISIBLE else View.GONE
-        Timber.d("Updated pauseButton: shouldBeVisible=$shouldBeVisible, visibility=${pauseButton.visibility}, text=${pauseButton.text}, gameState=$gameState")
+        Timber.d("Updated pauseButton: shouldBeVisible=$shouldBeVisible, visibility=${pauseButton.visibility}, gameState=$gameState")
     }
 
     fun setGameMode(mode: GameState) {
