@@ -1,9 +1,12 @@
 package com.example.spaceshipbuilderapp
 
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
-import kotlinx.coroutines.tasks.await
 
 enum class GameState { BUILD, FLIGHT, GAME_OVER }
 
@@ -14,7 +17,7 @@ class GameStateManager @Inject constructor() {
     private var onLaunchListener: ((Boolean) -> Unit)? = null
     private var onGameOverListener: ((Boolean, Boolean, () -> Unit, () -> Unit, () -> Unit) -> Unit)? = null
     private var pausedState: PausedGameState? = null
-    private var shouldLoadPausedState: Boolean = false // New flag
+    private var shouldLoadPausedState: Boolean = false
     private val db = FirebaseFirestore.getInstance()
 
     data class PausedGameState(
@@ -129,42 +132,38 @@ class GameStateManager @Inject constructor() {
         resetFlightData: () -> Unit,
         savePersistentData: (String) -> Unit,
         userId: String?,
-        gameEngine: GameEngine? = null
+        gameEngine: GameEngine?
     ) {
         if (gameState == newState) return
-        Timber.d("Transitioning game state from $gameState to $newState")
+        Timber.d("Transitioning game state from $gameState to $newState, userId=$userId")
 
-        // Save state when pausing (FLIGHT -> BUILD)
         if (gameState == GameState.FLIGHT && newState == GameState.BUILD && gameEngine != null) {
             pausedState = saveGameState(gameEngine)
-            shouldLoadPausedState = true // Set flag to true when pausing
-            Timber.d("Saved game state on pause: $pausedState, shouldLoadPausedState=$shouldLoadPausedState")
-            if (userId != null) {
-                savePausedStateToFirebase(userId)
-            }
+            updateGameStateInFirebase(userId, shouldLoadPausedState = true)
+            Timber.d("Saved game state on pause: $pausedState, shouldLoadPausedState=true")
+            savePausedStateToFirebase(userId)
         }
-
+        if (newState == GameState.GAME_OVER) {
+            updateGameStateInFirebase(userId, shouldLoadPausedState = false)
+            deletePausedStateFromFirebase(userId)
+            pausedState = null
+            Timber.d("Cleared pausedState in memory for GAME_OVER: pausedState=$pausedState")
+        }
         gameState = newState
         when (newState) {
             GameState.FLIGHT -> {
-                if (shouldLoadPausedState && pausedState != null && gameEngine != null) {
-                    restoreGameState(gameEngine, pausedState!!)
-                    Timber.d("Restored game state on resume")
+                CoroutineScope(Dispatchers.Main).launch {
+                    loadPausedStateFromFirebase(userId, gameEngine?.flightModeManager?.gameObjectManager)
+                    if (shouldLoadPausedState && pausedState != null && gameEngine != null) {
+                        restoreGameState(gameEngine, pausedState!!)
+                        Timber.d("Restored game state on resume")
+                    } else {
+                        Timber.d("No paused state to restore in FLIGHT mode: shouldLoadPausedState=$shouldLoadPausedState, pausedState=$pausedState")
+                    }
                 }
                 onLaunchListener?.invoke(true)
             }
             GameState.BUILD -> {
-                // Only clear pausedState and flag if coming from GAME_OVER
-                if (gameState == GameState.GAME_OVER) {
-                    Timber.d("Clearing paused state and flag on transition to BUILD from GAME_OVER")
-                    pausedState = null
-                    shouldLoadPausedState = false
-                    if (userId != null) {
-                        savePausedStateToFirebase(userId)
-                    }
-                } else {
-                    Timber.d("Preserving paused state on transition to BUILD: $pausedState, shouldLoadPausedState=$shouldLoadPausedState")
-                }
                 onLaunchListener?.invoke(false)
                 resetFlightData()
                 if (userId != null) {
@@ -172,11 +171,9 @@ class GameStateManager @Inject constructor() {
                 }
             }
             GameState.GAME_OVER -> {
-                // Clear paused state and flag on game over
-                pausedState = null
-                shouldLoadPausedState = false
+                // Already handled above
                 if (userId != null) {
-                    savePausedStateToFirebase(userId)
+                    savePersistentData(userId)
                 }
             }
         }
@@ -218,6 +215,7 @@ class GameStateManager @Inject constructor() {
     }
 
     fun restoreGameState(gameEngine: GameEngine, state: PausedGameState) {
+        Timber.d("Restoring game state: $state")
         gameEngine.shipX = state.shipX
         gameEngine.shipY = state.shipY
         gameEngine.hp = state.hp
@@ -258,54 +256,100 @@ class GameStateManager @Inject constructor() {
 
     fun getPausedState(): PausedGameState? = pausedState
 
-    fun shouldLoadPausedState(): Boolean = shouldLoadPausedState // Getter for the flag
+    fun shouldLoadPausedState(): Boolean = shouldLoadPausedState
 
-    suspend fun loadPausedStateFromFirebase(userId: String, gameObjectManager: GameObjectManager) {
+    suspend fun loadPausedStateFromFirebase(userId: String?, gameObjectManager: GameObjectManager?) {
         try {
-            Timber.d("Loading paused state for userId: $userId")
-            val doc = db.collection("users").document(userId).collection("gameState").document("pausedState").get().await()
-            if (doc.exists()) {
-                val data = doc.data!!
-                shouldLoadPausedState = data["shouldLoadPausedState"] as? Boolean ?: false
-                if (shouldLoadPausedState) {
-                    pausedState = PausedGameState.fromMap(data, gameObjectManager)
-                    Timber.d("Loaded paused state from Firebase: $pausedState, shouldLoadPausedState=$shouldLoadPausedState")
+            if (userId == null || gameObjectManager == null) {
+                Timber.d("UserId or gameObjectManager is null, skipping loadPausedStateFromFirebase")
+                shouldLoadPausedState = false
+                pausedState = null
+                return
+            }
+            Timber.d("Loading game state for userId: $userId")
+            val gameStateDoc = db.collection("users").document(userId).collection("gameState").document("gameState").get().await()
+            if (gameStateDoc.exists()) {
+                shouldLoadPausedState = gameStateDoc.getBoolean("shouldLoadPausedState") ?: false
+                Timber.d("Loaded shouldLoadPausedState from gameState: $shouldLoadPausedState")
+            } else {
+                shouldLoadPausedState = false
+                Timber.d("No gameState document found for userId: $userId, setting shouldLoadPausedState to false")
+                db.collection("users").document(userId).collection("gameState").document("gameState")
+                    .set(mapOf("shouldLoadPausedState" to false))
+                    .addOnSuccessListener { Timber.d("Initialized gameState document with shouldLoadPausedState=false for userId: $userId") }
+                    .addOnFailureListener { e -> Timber.e(e, "Failed to initialize gameState document: ${e.message}") }
+            }
+
+            if (shouldLoadPausedState) {
+                val pausedStateDoc = db.collection("users").document(userId).collection("gameState").document("pausedState").get().await()
+                if (pausedStateDoc.exists()) {
+                    pausedState = PausedGameState.fromMap(pausedStateDoc.data!!, gameObjectManager)
+                    Timber.d("Loaded paused state from Firebase: $pausedState")
                 } else {
-                    pausedState = null
-                    Timber.d("Paused state exists but shouldLoadPausedState is false, not loading")
+                    shouldLoadPausedState = false
+                    Timber.d("Paused state document not found, setting shouldLoadPausedState to false")
+                    updateGameStateInFirebase(userId, shouldLoadPausedState = false)
                 }
             } else {
                 pausedState = null
-                shouldLoadPausedState = false
-                Timber.d("No paused state found for userId: $userId")
+                Timber.d("shouldLoadPausedState is false, not loading paused state")
+                deletePausedStateFromFirebase(userId)
             }
         } catch (e: Exception) {
             Timber.e(e, "Failed to load paused state from Firebase: ${e.message}")
-            pausedState = null
             shouldLoadPausedState = false
+            pausedState = null
+            if (userId != null) {
+                updateGameStateInFirebase(userId, shouldLoadPausedState = false)
+                deletePausedStateFromFirebase(userId)
+            }
         }
     }
 
-    fun savePausedStateToFirebase(userId: String) {
+    private fun savePausedStateToFirebase(userId: String?) {
+        if (userId == null || pausedState == null) {
+            Timber.d("UserId is null or pausedState is null, skipping savePausedStateToFirebase")
+            return
+        }
         try {
-            val data = mutableMapOf<String, Any?>(
-                "shouldLoadPausedState" to shouldLoadPausedState
-            )
-            pausedState?.toMap()?.let { data.putAll(it) }
-
-            if (shouldLoadPausedState && pausedState != null) {
-                db.collection("users").document(userId).collection("gameState").document("pausedState")
-                    .set(data)
-                    .addOnSuccessListener { Timber.d("Saved paused state to Firebase for userId: $userId, shouldLoadPausedState=$shouldLoadPausedState") }
-                    .addOnFailureListener { e -> Timber.e(e, "Failed to save paused state to Firebase: ${e.message}") }
-            } else {
-                db.collection("users").document(userId).collection("gameState").document("pausedState")
-                    .set(mapOf("shouldLoadPausedState" to false)) // Clear with flag only
-                    .addOnSuccessListener { Timber.d("Cleared paused state in Firebase for userId: $userId, shouldLoadPausedState=$shouldLoadPausedState") }
-                    .addOnFailureListener { e -> Timber.e(e, "Failed to clear paused state in Firebase: ${e.message}") }
-            }
+            val data = pausedState!!.toMap()
+            db.collection("users").document(userId).collection("gameState").document("pausedState")
+                .set(data)
+                .addOnSuccessListener { Timber.d("Saved paused state to Firebase for userId: $userId") }
+                .addOnFailureListener { e -> Timber.e(e, "Failed to save paused state to Firebase: ${e.message}") }
         } catch (e: Exception) {
             Timber.e(e, "Exception while saving paused state to Firebase: ${e.message}")
+        }
+    }
+
+    private fun updateGameStateInFirebase(userId: String?, shouldLoadPausedState: Boolean) {
+        if (userId == null) {
+            Timber.d("UserId is null, skipping updateGameStateInFirebase")
+            return
+        }
+        try {
+            this.shouldLoadPausedState = shouldLoadPausedState
+            db.collection("users").document(userId).collection("gameState").document("gameState")
+                .set(mapOf("shouldLoadPausedState" to shouldLoadPausedState))
+                .addOnSuccessListener { Timber.d("Updated gameState in Firebase for userId: $userId, shouldLoadPausedState=$shouldLoadPausedState") }
+                .addOnFailureListener { e -> Timber.e(e, "Failed to update gameState in Firebase: ${e.message}") }
+        } catch (e: Exception) {
+            Timber.e(e, "Exception while updating gameState in Firebase: ${e.message}")
+        }
+    }
+
+    private fun deletePausedStateFromFirebase(userId: String?) {
+        if (userId == null) {
+            Timber.d("UserId is null, skipping deletePausedStateFromFirebase")
+            return
+        }
+        try {
+            db.collection("users").document(userId).collection("gameState").document("pausedState")
+                .delete()
+                .addOnSuccessListener { Timber.d("Deleted paused state document from Firebase for userId: $userId") }
+                .addOnFailureListener { e -> Timber.e(e, "Failed to delete paused state document: ${e.message}") }
+        } catch (e: Exception) {
+            Timber.e(e, "Exception while deleting paused state from Firebase: ${e.message}")
         }
     }
 
@@ -334,7 +378,6 @@ class GameStateManager @Inject constructor() {
 
     fun resetPausedState() {
         pausedState = null
-        shouldLoadPausedState = false
-        Timber.d("Paused state and flag reset to null/false")
+        Timber.d("Paused state reset to null")
     }
 }

@@ -1,12 +1,17 @@
 package com.example.spaceshipbuilderapp
 
+import android.content.Context
+import com.google.firebase.firestore.FirebaseFirestore
 import dagger.Lazy
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.random.Random
-import com.google.firebase.firestore.FirebaseFirestore
-import dagger.hilt.android.qualifiers.ApplicationContext
-import android.content.Context
 
 class FlightModeManager @Inject constructor(
     val shipManager: ShipManager,
@@ -17,9 +22,9 @@ class FlightModeManager @Inject constructor(
     private val gameStateManager: GameStateManager,
     private val aiAssistant: AIAssistant,
     private val gameEngine: Lazy<GameEngine>,
-    @ApplicationContext private val context: Context // Add context for Firebase
+    @ApplicationContext private val context: Context
 ) {
-    private val db = FirebaseFirestore.getInstance() // Initialize FirebaseFirestore
+    private val db = FirebaseFirestore.getInstance()
 
     var currentScore = 0
     var highestScore = 0
@@ -28,7 +33,7 @@ class FlightModeManager @Inject constructor(
     val glowDuration = 1000L
 
     private var continuesUsed = 0
-    private var adContinuesUsed = 0 // Track ad continues separately
+    private var adContinuesUsed = 0
     private val maxContinues = 2
     private val maxAdContinues = 3
 
@@ -243,7 +248,8 @@ class FlightModeManager @Inject constructor(
                     shipManager.screenHeight,
                     ::resetFlightData,
                     { _ -> },
-                    userId
+                    userId,
+                    gameEngine.get() // Pass gameEngine here
                 )
                 val canContinueWithAd = adContinuesUsed < maxAdContinues
                 val canUseRevive = shipManager.reviveCount > 0
@@ -253,7 +259,15 @@ class FlightModeManager @Inject constructor(
                     adContinuesUsed++
                     shipManager.hp = shipManager.maxHp
                     shipManager.fuel = shipManager.fuelCapacity
-                    gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                    gameStateManager.setGameState(
+                        GameState.FLIGHT,
+                        shipManager.screenWidth,
+                        shipManager.screenHeight,
+                        ::resetFlightData,
+                        { _ -> },
+                        userId,
+                        gameEngine.get() // Pass gameEngine here
+                    )
                     Timber.d("Player continued after ad, continues used: $continuesUsed, ad continues used: $adContinuesUsed")
                 }
                 val onContinueWithRevive: () -> Unit = {
@@ -263,7 +277,15 @@ class FlightModeManager @Inject constructor(
                         continuesUsed++
                         shipManager.hp = shipManager.maxHp
                         shipManager.fuel = shipManager.fuelCapacity
-                        gameStateManager.setGameState(GameState.FLIGHT, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                        gameStateManager.setGameState(
+                            GameState.FLIGHT,
+                            shipManager.screenWidth,
+                            shipManager.screenHeight,
+                            ::resetFlightData,
+                            { _ -> },
+                            userId,
+                            gameEngine.get() // Pass gameEngine here
+                        )
                         Timber.d("Player used a revive, revives remaining: ${shipManager.reviveCount}, continues used: $continuesUsed")
                     } else {
                         Timber.d("No revives available")
@@ -276,16 +298,43 @@ class FlightModeManager @Inject constructor(
                         gameEngine.get().savePersistentData(userId)
                         currentScore = 0
                     }
-                    gameStateManager.resetPausedState()
-                    if (userId != null) {
-                        gameStateManager.savePausedStateToFirebase(userId)
-                        // Forcefully delete paused state document
-                        db.collection("users").document(userId).collection("gameState").document("pausedState")
-                            .delete()
-                            .addOnSuccessListener { Timber.d("Forced deletion of paused state in Firebase for userId: $userId") }
-                            .addOnFailureListener { e: Exception -> Timber.e(e, "Failed to force delete paused state: ${e.message}") }
+                    runBlocking {
+                        try {
+                            val gameStateRef = db.collection("users").document(userId).collection("gameState").document("gameState")
+                            val pausedStateRef = db.collection("users").document(userId).collection("gameState").document("pausedState")
+                            gameStateRef.set(mapOf("shouldLoadPausedState" to false)).await()
+                            Timber.d("Set shouldLoadPausedState to false in Firebase for userId: $userId")
+                            pausedStateRef.delete().await()
+                            Timber.d("Deleted pausedState document in Firebase for userId: $userId")
+                            val updatedGameState = gameStateRef.get().await()
+                            val updatedShouldLoad = updatedGameState.getBoolean("shouldLoadPausedState") ?: true
+                            if (!updatedShouldLoad) {
+                                Timber.d("Verified shouldLoadPausedState is false in Firebase for userId: $userId")
+                            } else {
+                                Timber.w("Verification failed: shouldLoadPausedState still true in Firebase")
+                            }
+                            val pausedStateExists = pausedStateRef.get().await().exists()
+                            if (!pausedStateExists) {
+                                Timber.d("Verified pausedState document is deleted in Firebase for userId: $userId")
+                            } else {
+                                Timber.w("Verification failed: pausedState document still exists in Firebase")
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Failed to ensure Firebase state cleanup: ${e.message}")
+                            gameEngine.get().resetPausedState()
+                            gameStateManager.resetPausedState()
+                        }
                     }
-                    gameStateManager.setGameState(GameState.BUILD, shipManager.screenWidth, shipManager.screenHeight, ::resetFlightData, { _ -> }, userId)
+                    gameEngine.get().resetPausedState()
+                    gameStateManager.setGameState(
+                        GameState.BUILD,
+                        shipManager.screenWidth,
+                        shipManager.screenHeight,
+                        ::resetFlightData,
+                        { _ -> },
+                        userId,
+                        gameEngine.get() // Pass gameEngine here
+                    )
                     gameObjectManager.clearGameObjects()
                     powerUpManager.resetPowerUpEffects()
                     if (distanceTraveled > longestDistanceTraveled) {
@@ -305,7 +354,7 @@ class FlightModeManager @Inject constructor(
                     shipManager.fuel = 0f
                     shipManager.missileCount = shipManager.maxMissiles
                     shipManager.lastMissileRechargeTime = System.currentTimeMillis()
-                    Timber.d("Player declined continue, returned to build screen, score saved, paused state cleared and forced deletion from Firebase")
+                    Timber.d("Player declined continue, returned to build screen, score saved, paused state cleared")
                 }
                 gameStateManager.notifyGameOver(
                     canContinue = canContinueWithAd,

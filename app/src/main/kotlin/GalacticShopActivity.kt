@@ -14,6 +14,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class GalacticShopActivity : AppCompatActivity() {
     @Inject lateinit var gameEngine: GameEngine
+    @Inject lateinit var audioManager: AudioManager
 
     private lateinit var starsCollectedText: TextView
     private lateinit var unlockShipSet2Button: Button
@@ -181,7 +182,11 @@ class GalacticShopActivity : AppCompatActivity() {
         // Back Button
         findViewById<Button>(R.id.backButton).setOnClickListener {
             finish()
+            overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
+
+        audioManager.playDialogOpenSound()
+        overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
     }
 
     private fun updateUI() {
@@ -200,5 +205,9 @@ class GalacticShopActivity : AppCompatActivity() {
         buySpeedBoostExtenderButton.isEnabled = gameEngine.level >= 25 && gameEngine.starsCollected >= 30 && !gameEngine.speedBoostExtended
         buyMissileSlotButton.isEnabled = gameEngine.level >= 30 && gameEngine.starsCollected >= 35 && gameEngine.extraMissileSlots < 2
         buyFuelTankUpgradeButton.isEnabled = gameEngine.level >= 15 && gameEngine.starsCollected >= 20 && !gameEngine.fuelTankUpgraded
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
     }
 }

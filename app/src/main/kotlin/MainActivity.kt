@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
             val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
             binding.buildView.setStatusBarHeight(statusBarHeight)
             binding.flightView.setStatusBarHeight(statusBarHeight)
-            binding.flightView.setUserId(userId ?: "default_user")
+            // Remove setUserId here; set it after initializeGame
             val width = binding.flightView.width.toFloat()
             val height = binding.flightView.height.toFloat()
             if (width > 0f && height > 0f) {
@@ -228,6 +228,26 @@ class MainActivity : AppCompatActivity() {
         initializeGame()
     }
 
+    override fun onResume() {
+        super.onResume()
+        CoroutineScope(Dispatchers.Main).launch {
+            userId?.let { id ->
+                gameStateManager.loadPausedStateFromFirebase(id, gameEngine.flightModeManager.gameObjectManager)
+                Timber.d("onResume: Paused state after reloading: ${gameStateManager.getPausedState()}, shouldLoadPausedState=${gameStateManager.shouldLoadPausedState()}")
+                if (gameStateManager.gameState == GameState.GAME_OVER) {
+                    Timber.d("onResume: Skipping paused state load due to GAME_OVER")
+                    return@let
+                }
+                if (gameStateManager.shouldLoadPausedState() && gameStateManager.getPausedState() != null && gameStateManager.gameState == GameState.BUILD) {
+                    gameStateManager.restoreGameState(gameEngine, gameStateManager.getPausedState()!!)
+                    Timber.d("onResume: Restored paused state in BUILD mode")
+                } else if (!gameStateManager.shouldLoadPausedState() && gameStateManager.gameState == GameState.BUILD) {
+                    Timber.d("onResume: Not applying paused state in BUILD mode as shouldLoadPausedState is false")
+                }
+            }
+        }
+    }
+
     private fun initializeGame() {
         CoroutineScope(Dispatchers.Main).launch {
             try {
@@ -235,16 +255,23 @@ class MainActivity : AppCompatActivity() {
                 Timber.d("Initializing game with default userId: $userId")
                 gameEngine.loadUserData(userId!!)
                 highscoreManager.initialize(userId!!)
-                // Load paused state from Firebase based on the flag
                 gameStateManager.loadPausedStateFromFirebase(userId!!, gameEngine.flightModeManager.gameObjectManager)
                 Timber.d("Paused state after loading: ${gameStateManager.getPausedState()}, shouldLoadPausedState=${gameStateManager.shouldLoadPausedState()}")
 
-                // Apply paused state to GameEngine if flag is true and paused state exists
                 if (gameStateManager.shouldLoadPausedState() && gameStateManager.getPausedState() != null) {
                     gameStateManager.restoreGameState(gameEngine, gameStateManager.getPausedState()!!)
                     Timber.d("Applied paused state to GameEngine on initial load")
                 } else {
-                    Timber.d("No paused state loaded or flag is false, using default stats")
+                    gameStateManager.setGameState(
+                        GameState.BUILD,
+                        gameEngine.screenWidth,
+                        gameEngine.screenHeight,
+                        gameEngine.flightModeManager::resetFlightData,
+                        gameEngine::savePersistentData,
+                        userId!!,
+                        gameEngine
+                    )
+                    Timber.d("No paused state loaded or flag is false, setting to BUILD mode")
                 }
 
                 binding.buildView.post {
@@ -267,7 +294,7 @@ class MainActivity : AppCompatActivity() {
                     Timber.d("Engine image visibility: ${binding.engineImage.isVisible}, width: ${binding.engineImage.width}, height: ${binding.engineImage.height}")
                     setupListeners()
                     setupShipSpinner()
-                    // Signal BuildView that initialization is complete
+                    binding.flightView.setUserId(userId!!) // Set userId here after it's initialized
                     binding.buildView.setInitialized()
                 }
 
@@ -317,7 +344,7 @@ class MainActivity : AppCompatActivity() {
                 showToast(R.string.error_userdata, e.message ?: "Unknown error")
                 userId = "default_user"
                 gameEngine.playerName = "Player"
-                binding.buildView.setInitialized() // Ensure BuildView renders even on failure
+                binding.buildView.setInitialized()
             }
         }
     }
@@ -373,7 +400,6 @@ class MainActivity : AppCompatActivity() {
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, shipNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.shipSpinner.adapter = adapter
-
         binding.shipSpinner.setSelection(gameEngine.selectedShipSet)
 
         binding.shipSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {

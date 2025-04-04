@@ -318,4 +318,8 @@ class SkillTreeActivity : AppCompatActivity() {
         }
         view.startAnimation(scaleAnimation)
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+    }
 }

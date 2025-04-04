@@ -352,13 +352,17 @@ class GameEngine @Inject constructor(
                 updateUnlockedShipSets()
                 Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, experience=$experience, skills=${skillManager.skills}, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded")
 
-                // Load paused state and ensure it’s not overwritten unless explicitly reset
-                gameStateManager.loadPausedStateFromFirebase(userId, flightModeManager.gameObjectManager)
-                val loadedPausedState = gameStateManager.getPausedState()
-                if (loadedPausedState != null) {
-                    Timber.d("Paused state loaded and preserved: $loadedPausedState")
+                // Load paused state only if not in GAME_OVER or BUILD after game over
+                if (gameStateManager.gameState != GameState.GAME_OVER) {
+                    gameStateManager.loadPausedStateFromFirebase(userId, flightModeManager.gameObjectManager)
+                    val loadedPausedState = gameStateManager.getPausedState()
+                    if (loadedPausedState != null) {
+                        Timber.d("Paused state loaded and preserved: $loadedPausedState")
+                    } else {
+                        Timber.d("No paused state loaded from Firebase")
+                    }
                 } else {
-                    Timber.d("No paused state loaded from Firebase")
+                    Timber.d("Skipped paused state load due to GAME_OVER state")
                 }
             } else {
                 Timber.d("User data not found for $userId, initializing with defaults")
@@ -632,6 +636,7 @@ class GameEngine @Inject constructor(
     }
 
     fun savePersistentData(userId: String) {
+        // Ensure this does not interfere with gameState
         val userData = hashMapOf(
             "level" to level,
             "shipColor" to shipColor,
@@ -653,8 +658,8 @@ class GameEngine @Inject constructor(
             "fuelTankUpgraded" to fuelTankUpgraded
         )
         db.collection("users").document(userId).set(userData)
-            .addOnSuccessListener { Timber.d("Saved user data for $userId, experience: $experience, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded") }
-            .addOnFailureListener { e -> Timber.e(e, "Failed to save user data for $userId: ${e.message}") }
+            .addOnSuccessListener { Timber.d("Saved persistent user data for $userId, experience: $experience, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUp  = $speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded") }
+            .addOnFailureListener { e -> Timber.e(e, "Failed to save persistent user data for $userId: ${e.message}") }
     }
 
     fun setLaunchListener(listener: (Boolean) -> Unit) {
@@ -662,12 +667,7 @@ class GameEngine @Inject constructor(
     }
 
     fun setGameOverListener(listener: (Boolean, Boolean, () -> Unit, () -> Unit, () -> Unit) -> Unit) {
-        gameStateManager.setGameOverListener { canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive, onReturnToBuild ->
-            Timber.d("Game over listener triggered: canContinue=$canContinue, canUseRevive=$canUseRevive")
-            listener(canContinue, canUseRevive, onContinueWithAd, onContinueWithRevive) {
-                onReturnToBuild()
-            }
-        }
+        gameStateManager.setGameOverListener(listener)
     }
 
     fun notifyLaunchListener() {
@@ -682,5 +682,31 @@ class GameEngine @Inject constructor(
     fun addExperience(score: Int) {
         experience += score
         Timber.d("Added $score to experience, new total: $experience")
+    }
+
+    // Reset all paused state-related fields
+    fun resetPausedState() {
+        Timber.d("Resetting paused state in GameEngine")
+        shipX = screenWidth / 2f // Default center position
+        shipY = screenHeight / 2f // Default center position
+        hp = flightModeManager.shipManager.maxHp
+        fuel = 0f
+        missileCount = flightModeManager.shipManager.maxMissiles
+        currentScore = 0
+        distanceTraveled = 0f
+        level = 1
+        shieldActive = false
+        speedBoostActive = false
+        stealthActive = false
+        invincibilityActive = false
+        flightModeManager.powerUpManager.resetPowerUpEffects()
+        flightModeManager.gameObjectManager.clearGameObjects()
+        flightModeManager.setSessionDistanceTraveled(0f)
+        flightModeManager.setLastScoreUpdateTime(System.currentTimeMillis())
+        flightModeManager.setLastDistanceUpdateTime(System.currentTimeMillis())
+        glowStartTime = 0L
+        levelUpAnimationStartTime = 0L
+        flightModeManager.setContinuesUsed(0)
+        Timber.d("Paused state reset: hp=$hp, fuel=$fuel, score=$currentScore, distance=$distanceTraveled, level=$level")
     }
 }
