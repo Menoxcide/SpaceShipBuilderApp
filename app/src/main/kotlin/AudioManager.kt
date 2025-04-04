@@ -7,7 +7,7 @@ import timber.log.Timber
 import javax.inject.Inject
 
 class AudioManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext internal val context: Context
 ) {
     private var mediaPlayer: MediaPlayer? = null
 

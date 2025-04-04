@@ -22,7 +22,7 @@ class GameObjectManager @Inject constructor(
     private var bossDefeated = false
 
     private val powerUpSpawnRateBase = 2000L
-    private val asteroidSpawnRateBase = 1500L
+    private val asteroidSpawnRateBase = 500L
     private val enemySpawnRateBase = 5000L
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
@@ -32,6 +32,12 @@ class GameObjectManager @Inject constructor(
     var screenHeight: Float = 0f
 
     var currentProjectileSpeed: Float = 10f // Temporary field until we refactor further
+
+    private val bitmapManager: BitmapManager = BitmapManager(audioManager.context)
+
+    companion object {
+        const val MAX_ASTEROIDS = 20 // Limit total asteroids on screen
+    }
 
     fun getBoss(): BossShip? = boss
 
@@ -48,26 +54,36 @@ class GameObjectManager @Inject constructor(
     }
 
     fun spawnAsteroid(screenWidth: Float) {
+        if (asteroids.size >= MAX_ASTEROIDS) return // Prevent overcrowding
+
         val x = Random.nextFloat() * screenWidth
         val y = -screenHeight * 0.1f
+        val size = Random.nextFloat() * 30f + 20f // Random size between 20 and 50
+        val rotation = Random.nextFloat() * 20f // Random initial rotation
+        val angularVelocity = Random.nextFloat() * 0.2f - 0.1f // Random spin speed
+
         if (Random.nextFloat() < FlightModeManager.GIANT_ASTEROID_PROBABILITY) {
-            asteroids.add(GiantAsteroid(x, y, 30f * FlightModeManager.GIANT_ASTEROID_SCALE))
+            asteroids.add(GiantAsteroid(x, y, size * FlightModeManager.GIANT_ASTEROID_SCALE).apply {
+                this.rotation = rotation
+                this.angularVelocity = angularVelocity
+            })
         } else {
-            asteroids.add(Asteroid(x, y, 30f))
+            asteroids.add(Asteroid(x, y, size, rotation, angularVelocity))
         }
+        Timber.d("Spawned asteroid at ($x, $y) with size=$size, rotation=$rotation, angularVelocity=$angularVelocity")
     }
 
     fun spawnEnemyShip(screenWidth: Float, level: Int) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        val speedY = (5f + level * 0.05f).coerceAtMost(10f) // Reduced from 0.1f to 0.05f, capped at 10f
+        val speedY = (5f + level * 0.05f).coerceAtMost(10f)
         enemyShips.add(EnemyShip(x, y, speedY, shotInterval = 4000L))
     }
 
     fun spawnBoss(level: Int, maxHp: Float, screenWidth: Float, screenHeight: Float) {
         val tier = level / 10
-        val hpMultiplier = Math.pow(1.05, (tier - 1).toDouble()).toFloat() // Reduced from 1.1 to 1.05
-        val intervalMultiplier = Math.pow(0.95, (tier - 1).toDouble()).toFloat() // Reduced from 0.9 to 0.95
+        val hpMultiplier = Math.pow(1.05, (tier - 1).toDouble()).toFloat()
+        val intervalMultiplier = Math.pow(0.95, (tier - 1).toDouble()).toFloat()
         val bossHp = maxHp * hpMultiplier
         boss = BossShip(
             x = screenWidth / 2f,
@@ -90,7 +106,9 @@ class GameObjectManager @Inject constructor(
         screenHeight: Float,
         onBossDefeated: () -> Unit
     ) {
-        this.currentProjectileSpeed = currentProjectileSpeed // Update the temporary field
+        this.currentProjectileSpeed = currentProjectileSpeed
+        this.screenWidth = screenWidth
+        this.screenHeight = screenHeight
         val currentTime = System.currentTimeMillis()
 
         if (level % 10 != 0) {
@@ -157,9 +175,9 @@ class GameObjectManager @Inject constructor(
             projectiles.removeAll(projectilesToRemove)
             homingProjectiles.removeAll(homingProjectilesToRemove)
         } else {
-            val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.03f)).toLong() // Reduced from 0.05f to 0.03f
-            val asteroidSpawnRate = (asteroidSpawnRateBase / (1 + level * 0.05f)).toLong() // Reduced from 0.1f to 0.05f
-            val enemySpawnRate = (enemySpawnRateBase / (1 + level * 0.05f)).toLong() // Reduced from 0.1f to 0.05f
+            val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.03f)).toLong()
+            val asteroidSpawnRate = (asteroidSpawnRateBase / (1 + level * 0.05f)).toLong()
+            val enemySpawnRate = (enemySpawnRateBase / (1 + level * 0.05f)).toLong()
 
             if (currentTime - lastPowerUpSpawnTime >= powerUpSpawnRate) {
                 spawnPowerUp(screenWidth)
@@ -227,10 +245,8 @@ class GameObjectManager @Inject constructor(
         }
     }
 
-    // Method to set the boss for state restoration
     fun setBoss(bossShip: BossShip?) {
         boss = bossShip
         bossDefeated = bossShip == null
     }
 }
-

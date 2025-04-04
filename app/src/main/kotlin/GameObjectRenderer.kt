@@ -6,14 +6,13 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 
 class GameObjectRenderer @Inject constructor(@ApplicationContext private val context: Context) {
     private lateinit var powerUpBitmaps: Map<String, Bitmap?>
-    private var asteroidBitmap: Bitmap? = null
-    private var giantAsteroidBitmap: Bitmap? = null
     private var enemyShipBitmap: Bitmap? = null
     private val defaultProjectilePaint = Paint().apply {
         color = Color.WHITE
@@ -39,12 +38,33 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         color = Color.BLUE
         isAntiAlias = true
     }
+    private val hpBarBackgroundPaint = Paint().apply {
+        color = Color.GRAY
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+    private val hpBarFillPaint = Paint().apply {
+        color = Color.GREEN // Initial color, will be adjusted dynamically
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+    private val hpBarBorderPaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        isAntiAlias = true
+    }
 
-    private val bitmapManager: BitmapManager = BitmapManager(context) // Local instance for boss bitmaps
+    private val bitmapManager: BitmapManager = BitmapManager(context) // Local instance for bitmaps
 
     companion object {
         const val ENEMY_SHIP_SCALE = 0.5f // Scaling factor for enemy ships
-        const val BOSS_SHIP_SCALE = 0.7f // Scaling factor for boss ships
+        const val BOSS_TARGET_WIDTH = 150f // Target width in pixels for all boss ships
+        const val HP_BAR_WIDTH = 100f // Fixed width of the HP bar
+        const val HP_BAR_HEIGHT = 10f // Fixed height of the HP bar
+        const val HP_BAR_OFFSET = 20f // Distance above the boss ship
+        const val ASTEROID_MIN_SCALE = 0.5f // Minimum scale when asteroid is at top
+        const val ASTEROID_MAX_SCALE = 1.5f // Maximum scale when asteroid is at bottom
     }
 
     init {
@@ -57,9 +77,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
             "star" to BitmapFactory.decodeResource(context.resources, R.drawable.star_icon),
             "invincibility" to BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
         )
-        asteroidBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
         enemyShipBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
-        // Note: bossShipBitmap is no longer initialized here; we'll fetch it dynamically
     }
 
     fun drawPowerUps(canvas: Canvas, powerUps: List<PowerUp>, statusBarHeight: Float) {
@@ -75,16 +93,22 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
     fun drawAsteroids(canvas: Canvas, asteroids: List<Asteroid>, statusBarHeight: Float) {
         asteroids.forEach { asteroid ->
-            val bitmap = if (asteroid is GiantAsteroid) giantAsteroidBitmap else asteroidBitmap
+            val bitmap = bitmapManager.getRandomAsteroidBitmap()
             if (bitmap != null && !bitmap.isRecycled) {
-                val scaledWidth = bitmap.width * asteroid.size / bitmap.width
-                val scaledHeight = bitmap.height * asteroid.size / bitmap.height
+                // Calculate dynamic scale based on y-position (top = smaller, bottom = larger)
+                val yPositionFactor = (asteroid.y + statusBarHeight + bitmap.height) / (canvas.height.toFloat() + bitmap.height) // Normalize y from 0 (top) to 1 (bottom)
+                val dynamicScale = ASTEROID_MIN_SCALE + (ASTEROID_MAX_SCALE - ASTEROID_MIN_SCALE) * yPositionFactor.coerceIn(0f, 1f)
+                val scaledWidth = bitmap.width * asteroid.size / bitmap.width * dynamicScale
+                val scaledHeight = bitmap.height * asteroid.size / bitmap.height * dynamicScale
+
                 canvas.save()
                 canvas.translate(asteroid.x - scaledWidth / 2f, asteroid.y - scaledHeight / 2f + statusBarHeight)
                 canvas.rotate(asteroid.rotation, scaledWidth / 2f, scaledHeight / 2f)
-                canvas.scale(asteroid.size / bitmap.width, asteroid.size / bitmap.height)
+                canvas.scale(asteroid.size / bitmap.width * dynamicScale, asteroid.size / bitmap.height * dynamicScale)
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
+
+                Timber.d("Drawing asteroid at (${asteroid.x}, ${asteroid.y}) with dynamicScale=$dynamicScale, scaledWidth=$scaledWidth, scaledHeight=$scaledHeight")
             } else {
                 Timber.w("Asteroid bitmap is null or recycled")
             }
@@ -123,13 +147,37 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         if (boss != null) {
             val bossShipBitmap = bitmapManager.getBossShipBitmap(boss.tier)
             if (bossShipBitmap != null && !bossShipBitmap.isRecycled) {
-                val scaledWidth = bossShipBitmap.width * BOSS_SHIP_SCALE
-                val scaledHeight = bossShipBitmap.height * BOSS_SHIP_SCALE
+                val originalWidth = bossShipBitmap.width.toFloat()
+                val scaleFactor = BOSS_TARGET_WIDTH / originalWidth
+                val scaledWidth = bossShipBitmap.width * scaleFactor
+                val scaledHeight = bossShipBitmap.height * scaleFactor
+
                 canvas.save()
                 canvas.translate(boss.x - scaledWidth / 2f, boss.y - scaledHeight / 2f + statusBarHeight)
-                canvas.scale(BOSS_SHIP_SCALE, BOSS_SHIP_SCALE)
+                canvas.scale(scaleFactor, scaleFactor)
                 canvas.drawBitmap(bossShipBitmap, 0f, 0f, null)
                 canvas.restore()
+
+                val hpBarLeft = boss.x - HP_BAR_WIDTH / 2f
+                val hpBarTop = boss.y - scaledHeight / 2f - HP_BAR_OFFSET - HP_BAR_HEIGHT + statusBarHeight
+                val hpBarRight = hpBarLeft + HP_BAR_WIDTH
+                val hpBarBottom = hpBarTop + HP_BAR_HEIGHT
+
+                canvas.drawRect(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom, hpBarBackgroundPaint)
+
+                val hpFraction = boss.hp / boss.maxHp
+                hpBarFillPaint.color = when {
+                    hpFraction > 0.5f -> Color.GREEN
+                    hpFraction > 0.25f -> Color.YELLOW
+                    else -> Color.RED
+                }
+                val hpBarFillRight = hpBarLeft + HP_BAR_WIDTH * hpFraction.coerceIn(0f, 1f)
+                canvas.drawRect(hpBarLeft, hpBarTop, hpBarFillRight, hpBarBottom, hpBarFillPaint)
+
+                val hpBarRect = RectF(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom)
+                canvas.drawRect(hpBarRect, hpBarBorderPaint)
+
+                Timber.d("Drawing boss ship for tier ${boss.tier} with scaleFactor=$scaleFactor, scaledWidth=$scaledWidth, scaledHeight=$scaledHeight, HP=${boss.hp}/${boss.maxHp}, hpFraction=$hpFraction")
             } else {
                 Timber.w("Boss ship bitmap for tier ${boss.tier} is null or recycled")
             }
@@ -150,10 +198,8 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
     fun onDestroy() {
         powerUpBitmaps.values.forEach { it?.recycle() }
-        asteroidBitmap?.recycle()
-        giantAsteroidBitmap?.recycle()
         enemyShipBitmap?.recycle()
-        bitmapManager.onDestroy() // Clean up BitmapManager bitmaps
+        bitmapManager.onDestroy()
         Timber.d("GameObjectRenderer onDestroy called, bitmaps recycled")
     }
 }

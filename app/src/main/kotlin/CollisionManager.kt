@@ -28,9 +28,10 @@ class CollisionManager @Inject constructor(
         onAsteroidHit: (Asteroid) -> Unit,
         onEnemyProjectileHit: (Projectile) -> Unit,
         onEnemyShipHit: (EnemyShip) -> Unit
-    ): Pair<Int, Long> { // Changed return type to Pair<Int, Long>
+    ): Triple<Int, Long, Boolean> { // Changed return type to Triple to include boss collision state
         var scoreDelta = 0
         var glowStartTime = 0L
+        var isCollidingWithBoss = false // Track boss collision state
         val currentTime = System.currentTimeMillis()
 
         val shipRect = RectF(
@@ -44,12 +45,12 @@ class CollisionManager @Inject constructor(
         if (boss != null) {
             val bossRect = RectF(boss.x - 75f, boss.y - 75f, boss.x + 75f, boss.y + 75f)
             if (shipRect.intersect(bossRect) && !stealthActive && !invincibilityActive) {
+                isCollidingWithBoss = true
                 renderer.shipRendererInstance.addCollisionParticles(shipX, shipY)
-                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, 50)
+                // Damage text and HP reduction will be handled in FlightModeManager.kt per second
                 audioManager.playCollisionSound()
                 glowStartTime = currentTime
-                Timber.d("Collided with boss, HP decreased")
-                return Pair(scoreDelta, glowStartTime)
+                Timber.d("Colliding with boss, continuous damage will be applied")
             }
         }
 
@@ -211,7 +212,7 @@ class CollisionManager @Inject constructor(
         enemyShips.removeAll(enemyShipsToRemove)
         homingProjectiles.removeAll(homingProjectilesToRemove)
 
-        return Pair(scoreDelta, glowStartTime)
+        return Triple(scoreDelta, glowStartTime, isCollidingWithBoss)
     }
 
     fun checkCollision(shipX: Float, shipY: Float, maxPartHalfWidth: Float, totalShipHeight: Float, rect: RectF): Boolean {

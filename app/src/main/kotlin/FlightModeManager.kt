@@ -47,6 +47,7 @@ class FlightModeManager @Inject constructor(
 
     private var lastScoreUpdateTime = System.currentTimeMillis()
     private var lastDistanceUpdateTime = System.currentTimeMillis()
+    private var lastBossCollisionDamageTime = 0L // Track last damage application time
 
     private var userId: String = "default_user"
 
@@ -61,6 +62,7 @@ class FlightModeManager @Inject constructor(
         const val ASTEROID_DESTROY_POINTS = 20
         const val BOSS_SHOT_INTERVAL = 2000L
         const val BOSS_MOVEMENT_INTERVAL = 1000L
+        const val BOSS_COLLISION_DAMAGE_PER_SECOND = 50f // Damage per second
     }
 
     fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float) {
@@ -159,7 +161,7 @@ class FlightModeManager @Inject constructor(
             var powerUpCollected: String? = null
             var fuelHpGained = false
 
-            val (scoreDelta, newGlowStartTime) = collisionManager.checkCollisions(
+            val (scoreDelta, newGlowStartTime, isCollidingWithBoss) = collisionManager.checkCollisions(
                 shipX = shipManager.shipX,
                 shipY = shipManager.shipY,
                 maxPartHalfWidth = shipManager.maxPartHalfWidth,
@@ -209,13 +211,35 @@ class FlightModeManager @Inject constructor(
                     shipManager.hp -= 10f
                 },
                 onEnemyShipHit = { enemy ->
-                    shipManager.hp -= 25f
+                    // Check if this is a boss collision (dummy enemy with shotInterval = 0L)
+                    if (enemy.shotInterval == 0L && gameObjectManager.getBoss() != null) {
+                        // Damage handled below per second
+                    } else {
+                        shipManager.hp -= 25f // Regular enemy ship damage
+                    }
                 }
             )
 
             currentScore += scoreDelta
             if (newGlowStartTime > 0L) {
                 glowStartTime = newGlowStartTime
+            }
+
+            // Handle continuous boss collision damage (50 HP per second)
+            if (isCollidingWithBoss) {
+                val timeSinceLastDamage = (currentTime - lastBossCollisionDamageTime).toFloat() / 1000f // Convert to seconds
+                val damageToApply = BOSS_COLLISION_DAMAGE_PER_SECOND * timeSinceLastDamage
+                shipManager.hp -= damageToApply
+                Timber.d("Boss collision damage applied: $damageToApply HP, new HP: ${shipManager.hp}")
+
+                // Update damage text every second
+                if (timeSinceLastDamage >= 1f) {
+                    gameObjectManager.renderer.shipRendererInstance.addDamageTextParticle(shipManager.shipX, shipManager.shipY, 50)
+                    lastBossCollisionDamageTime = currentTime
+                }
+            } else {
+                // Reset damage timer when not colliding
+                lastBossCollisionDamageTime = currentTime
             }
 
             gameObjectManager.cleanupGameObjects(shipManager.screenHeight, shipManager.screenWidth)
@@ -379,6 +403,7 @@ class FlightModeManager @Inject constructor(
         glowStartTime = 0L
         continuesUsed = 0
         adContinuesUsed = 0
+        lastBossCollisionDamageTime = 0L // Reset boss collision damage timer
         Timber.d("Flight data reset")
     }
 
