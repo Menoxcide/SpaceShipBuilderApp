@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PorterDuff
 import android.graphics.RectF
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
@@ -14,6 +15,8 @@ import javax.inject.Inject
 class GameObjectRenderer @Inject constructor(@ApplicationContext private val context: Context) {
     private lateinit var powerUpBitmaps: Map<String, Bitmap?>
     private var enemyShipBitmap: Bitmap? = null
+    private var droneEnemyBitmap: Bitmap? = null // New bitmap for drones
+    private var armoredEnemyBitmap: Bitmap? = null // New bitmap for armored enemies
     private val defaultProjectilePaint = Paint().apply {
         color = Color.WHITE
         isAntiAlias = true
@@ -59,6 +62,8 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
     companion object {
         const val ENEMY_SHIP_SCALE = 0.5f // Scaling factor for enemy ships
+        const val DRONE_ENEMY_SCALE = 0.3f // Smaller scale for drones
+        const val ARMORED_ENEMY_SCALE = 0.7f // Larger scale for armored enemies
         const val BOSS_TARGET_WIDTH = 150f // Target width in pixels for all boss ships
         const val HP_BAR_WIDTH = 100f // Fixed width of the HP bar
         const val HP_BAR_HEIGHT = 10f // Fixed height of the HP bar
@@ -78,6 +83,10 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
             "invincibility" to BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
         )
         enemyShipBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
+        // Initialize new bitmaps for drone and armored enemies
+        // Note: You'll need to add these drawables to your res/drawable folder
+        droneEnemyBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.drone_enemy) ?: enemyShipBitmap
+        armoredEnemyBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.armored_enemy) ?: enemyShipBitmap
     }
 
     fun drawPowerUps(canvas: Canvas, powerUps: List<PowerUp>, statusBarHeight: Float) {
@@ -129,16 +138,43 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
     fun drawEnemyShips(canvas: Canvas, enemyShips: List<EnemyShip>, statusBarHeight: Float) {
         enemyShips.forEach { enemyShip ->
-            if (enemyShipBitmap != null && !enemyShipBitmap!!.isRecycled) {
-                val scaledWidth = enemyShipBitmap!!.width * ENEMY_SHIP_SCALE
-                val scaledHeight = enemyShipBitmap!!.height * ENEMY_SHIP_SCALE
+            val (bitmap, scale) = when (enemyShip) {
+                is DroneEnemy -> Pair(droneEnemyBitmap, DRONE_ENEMY_SCALE)
+                is ArmoredEnemy -> Pair(armoredEnemyBitmap, ARMORED_ENEMY_SCALE)
+                else -> Pair(enemyShipBitmap, ENEMY_SHIP_SCALE)
+            }
+            if (bitmap != null && !bitmap.isRecycled) {
+                val scaledWidth = bitmap.width * scale
+                val scaledHeight = bitmap.height * scale
                 canvas.save()
                 canvas.translate(enemyShip.x - scaledWidth / 2f, enemyShip.y - scaledHeight / 2f + statusBarHeight)
-                canvas.scale(ENEMY_SHIP_SCALE, ENEMY_SHIP_SCALE)
-                canvas.drawBitmap(enemyShipBitmap!!, 0f, 0f, null)
+                canvas.scale(scale, scale)
+                canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
+
+                // Draw HP bar for enemies with health > 100 (e.g., ArmoredEnemy)
+                if (enemyShip.health > 100f) {
+                    val hpBarLeft = enemyShip.x - HP_BAR_WIDTH / 2f
+                    val hpBarTop = enemyShip.y - scaledHeight / 2f - HP_BAR_OFFSET - HP_BAR_HEIGHT + statusBarHeight
+                    val hpBarRight = hpBarLeft + HP_BAR_WIDTH
+                    val hpBarBottom = hpBarTop + HP_BAR_HEIGHT
+
+                    canvas.drawRect(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom, hpBarBackgroundPaint)
+
+                    val hpFraction = enemyShip.health / 200f // Assuming 200 is max for ArmoredEnemy
+                    hpBarFillPaint.color = when {
+                        hpFraction > 0.5f -> Color.GREEN
+                        hpFraction > 0.25f -> Color.YELLOW
+                        else -> Color.RED
+                    }
+                    val hpBarFillRight = hpBarLeft + HP_BAR_WIDTH * hpFraction.coerceIn(0f, 1f)
+                    canvas.drawRect(hpBarLeft, hpBarTop, hpBarFillRight, hpBarBottom, hpBarFillPaint)
+
+                    val hpBarRect = RectF(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom)
+                    canvas.drawRect(hpBarRect, hpBarBorderPaint)
+                }
             } else {
-                Timber.w("Enemy ship bitmap is null or recycled")
+                Timber.w("Enemy ship bitmap is null or recycled for ${enemyShip.javaClass.simpleName}")
             }
         }
     }
@@ -199,6 +235,8 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
     fun onDestroy() {
         powerUpBitmaps.values.forEach { it?.recycle() }
         enemyShipBitmap?.recycle()
+        droneEnemyBitmap?.recycle()
+        armoredEnemyBitmap?.recycle()
         bitmapManager.onDestroy()
         Timber.d("GameObjectRenderer onDestroy called, bitmaps recycled")
     }

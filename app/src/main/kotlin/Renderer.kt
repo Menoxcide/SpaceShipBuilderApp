@@ -40,8 +40,8 @@ class Renderer @Inject constructor(
         uiRenderer.showUnlockMessage(messages)
     }
 
-    fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, statusBarHeight: Float, level: Int = 1) {
-        backgroundRenderer.drawBackground(canvas, screenWidth, screenHeight, level)
+    fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, statusBarHeight: Float, level: Int = 1, environment: FlightModeManager.Environment) {
+        backgroundRenderer.drawBackground(canvas, screenWidth, screenHeight, level, environment)
         uiRenderer.setScreenDimensions(screenWidth, screenHeight)
     }
 

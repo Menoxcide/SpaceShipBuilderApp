@@ -1,8 +1,8 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Bitmap
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -128,7 +128,7 @@ class FlightView @Inject constructor(
         }
         Timber.d("onDraw called, visibility=$visibility, gameState=${gameStateManager.gameState}")
 
-        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
+        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level, gameEngine.currentEnvironment)
         renderer.drawShip(
             canvas,
             gameEngine,

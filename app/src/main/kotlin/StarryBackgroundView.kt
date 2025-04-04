@@ -38,6 +38,13 @@ class StarryBackgroundView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
+        renderer.drawBackground(
+            canvas,
+            screenWidth,
+            screenHeight,
+            statusBarHeight,
+            gameEngine.level,
+            gameEngine.currentEnvironment // Added environment parameter
+        )
     }
 }

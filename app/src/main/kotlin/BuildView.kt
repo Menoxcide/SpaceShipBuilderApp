@@ -83,8 +83,8 @@ class BuildView @Inject constructor(
         super.onDraw(canvas)
         Timber.d("onDraw called, visibility=$isVisible, gameState=${gameStateManager.gameState}")
 
-        // Draw background (including stars) first
-        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level)
+        // Draw background (including stars) first, passing the current environment
+        renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level, gameEngine.currentEnvironment)
         renderer.drawPlaceholders(canvas, buildModeManager.placeholders)
         renderer.drawParts(canvas, buildModeManager.parts)
         buildModeManager.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }

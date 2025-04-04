@@ -1,6 +1,10 @@
 package com.example.spaceshipbuilderapp
 
-import android.graphics.*
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.math.sin
@@ -64,18 +68,33 @@ class BackgroundRenderer @Inject constructor() {
         animationFrame = (animationFrame + 0.05f) % (2 * Math.PI.toFloat())
     }
 
-    fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, level: Int = 1) {
-        val gradientIndex = (level - 1) / 10 % 5
-        val gradients = listOf(
-            intArrayOf(Color.parseColor("#1A0B2E"), Color.parseColor("#2E1A4B"), Color.parseColor("#4B0082")),
-            intArrayOf(Color.parseColor("#0A2E4B"), Color.parseColor("#1A4B2E"), Color.parseColor("#008282")),
-            intArrayOf(Color.parseColor("#2E0A4B"), Color.parseColor("#4B2E0A"), Color.parseColor("#82004B")),
-            intArrayOf(Color.parseColor("#4B2E0A"), Color.parseColor("#2E4B0A"), Color.parseColor("#828200")),
-            intArrayOf(Color.parseColor("#0A4B2E"), Color.parseColor("#2E0A4B"), Color.parseColor("#00824B"))
-        )
+    fun drawBackground(canvas: Canvas, screenWidth: Float, screenHeight: Float, level: Int = 1, environment: FlightModeManager.Environment) {
+        val gradientColors = when (environment) {
+            FlightModeManager.Environment.ASTEROID_FIELD -> intArrayOf(
+                Color.parseColor("#2E2E2E"), // Dark gray
+                Color.parseColor("#4B4B4B"), // Medium gray
+                Color.parseColor("#6C6C6C")  // Light gray
+            )
+            FlightModeManager.Environment.NEBULA -> intArrayOf(
+                Color.parseColor("#4B0082"), // Indigo
+                Color.parseColor("#9400D3"), // Dark violet
+                Color.parseColor("#8A2BE2")  // Blue violet
+            )
+            FlightModeManager.Environment.NORMAL -> {
+                val gradientIndex = (level - 1) / 10 % 5
+                val gradients = listOf(
+                    intArrayOf(Color.parseColor("#1A0B2E"), Color.parseColor("#2E1A4B"), Color.parseColor("#4B0082")),
+                    intArrayOf(Color.parseColor("#0A2E4B"), Color.parseColor("#1A4B2E"), Color.parseColor("#008282")),
+                    intArrayOf(Color.parseColor("#2E0A4B"), Color.parseColor("#4B2E0A"), Color.parseColor("#82004B")),
+                    intArrayOf(Color.parseColor("#4B2E0A"), Color.parseColor("#2E4B0A"), Color.parseColor("#828200")),
+                    intArrayOf(Color.parseColor("#0A4B2E"), Color.parseColor("#2E0A4B"), Color.parseColor("#00824B"))
+                )
+                gradients[gradientIndex]
+            }
+        }
         backgroundPaint.shader = LinearGradient(
             0f, 0f, 0f, screenHeight,
-            gradients[gradientIndex],
+            gradientColors,
             floatArrayOf(0f, 0.5f, 1f),
             Shader.TileMode.CLAMP
         )

@@ -51,6 +51,19 @@ class FlightModeManager @Inject constructor(
 
     private var userId: String = "default_user"
 
+    // Environment enum
+    enum class Environment {
+        NORMAL,
+        ASTEROID_FIELD,
+        NEBULA
+    }
+
+    var currentEnvironment: Environment = Environment.NORMAL
+        private set
+
+    private var lastEnvironmentChangeTime = System.currentTimeMillis()
+    private val environmentChangeInterval = 30000L // 30 seconds
+
     companion object {
         const val LEVEL_UP_ANIMATION_DURATION = 5000L
         const val GIANT_ASTEROID_PROBABILITY = 0.1f
@@ -92,6 +105,13 @@ class FlightModeManager @Inject constructor(
 
             val currentTime = System.currentTimeMillis()
 
+            // Update environment
+            if (currentTime - lastEnvironmentChangeTime >= environmentChangeInterval) {
+                currentEnvironment = Environment.values().random()
+                lastEnvironmentChangeTime = currentTime
+                Timber.d("Environment changed to $currentEnvironment")
+            }
+
             powerUpManager.updatePowerUpEffects(shipManager)
             shipManager.fuel -= shipManager.currentFuelConsumption
 
@@ -108,6 +128,7 @@ class FlightModeManager @Inject constructor(
                 currentProjectileSpeed = shipManager.currentProjectileSpeed,
                 screenWidth = shipManager.screenWidth,
                 screenHeight = shipManager.screenHeight,
+                environment = currentEnvironment,
                 onBossDefeated = {
                     currentScore += 500
                     shipManager.level++
@@ -215,7 +236,7 @@ class FlightModeManager @Inject constructor(
                     if (enemy.shotInterval == 0L && gameObjectManager.getBoss() != null) {
                         // Damage handled below per second
                     } else {
-                        shipManager.hp -= 25f // Regular enemy ship damage
+                        shipManager.hp -= enemy.damage // Use enemy-specific damage
                     }
                 }
             )
@@ -404,6 +425,8 @@ class FlightModeManager @Inject constructor(
         continuesUsed = 0
         adContinuesUsed = 0
         lastBossCollisionDamageTime = 0L // Reset boss collision damage timer
+        currentEnvironment = Environment.NORMAL // Reset environment
+        lastEnvironmentChangeTime = System.currentTimeMillis()
         Timber.d("Flight data reset")
     }
 

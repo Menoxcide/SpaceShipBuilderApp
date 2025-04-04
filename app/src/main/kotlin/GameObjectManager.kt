@@ -53,7 +53,7 @@ class GameObjectManager @Inject constructor(
         powerUps.add(PowerUp(x, y, type))
     }
 
-    fun spawnAsteroid(screenWidth: Float) {
+    fun spawnAsteroid(screenWidth: Float, environment: FlightModeManager.Environment) {
         if (asteroids.size >= MAX_ASTEROIDS) return // Prevent overcrowding
 
         val x = Random.nextFloat() * screenWidth
@@ -62,7 +62,13 @@ class GameObjectManager @Inject constructor(
         val rotation = Random.nextFloat() * 20f // Random initial rotation
         val angularVelocity = Random.nextFloat() * 0.2f - 0.1f // Random spin speed
 
-        if (Random.nextFloat() < FlightModeManager.GIANT_ASTEROID_PROBABILITY) {
+        val asteroidProbability = if (environment == FlightModeManager.Environment.ASTEROID_FIELD) {
+            FlightModeManager.GIANT_ASTEROID_PROBABILITY * 1.5f // More giant asteroids in asteroid fields
+        } else {
+            FlightModeManager.GIANT_ASTEROID_PROBABILITY
+        }
+
+        if (Random.nextFloat() < asteroidProbability) {
             asteroids.add(GiantAsteroid(x, y, size * FlightModeManager.GIANT_ASTEROID_SCALE).apply {
                 this.rotation = rotation
                 this.angularVelocity = angularVelocity
@@ -73,11 +79,18 @@ class GameObjectManager @Inject constructor(
         Timber.d("Spawned asteroid at ($x, $y) with size=$size, rotation=$rotation, angularVelocity=$angularVelocity")
     }
 
-    fun spawnEnemyShip(screenWidth: Float, level: Int) {
+    fun spawnEnemyShip(screenWidth: Float, level: Int, environment: FlightModeManager.Environment) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
         val speedY = (5f + level * 0.05f).coerceAtMost(10f)
-        enemyShips.add(EnemyShip(x, y, speedY, shotInterval = 4000L))
+        val enemyType = when (Random.nextInt(3)) {
+            0 -> EnemyShip(x, y, speedY, shotInterval = 4000L)
+            1 -> DroneEnemy(x, y, speedY * 1.5f) // Faster drones
+            2 -> ArmoredEnemy(x, y, speedY * 0.5f) // Slower armored enemies
+            else -> EnemyShip(x, y, speedY, shotInterval = 4000L) // Fallback
+        }
+        enemyShips.add(enemyType)
+        Timber.d("Spawned enemy of type ${enemyType.javaClass.simpleName} at (x=$x, y=$y) in environment $environment")
     }
 
     fun spawnBoss(level: Int, maxHp: Float, screenWidth: Float, screenHeight: Float) {
@@ -104,6 +117,7 @@ class GameObjectManager @Inject constructor(
         currentProjectileSpeed: Float,
         screenWidth: Float,
         screenHeight: Float,
+        environment: FlightModeManager.Environment,
         onBossDefeated: () -> Unit
     ) {
         this.currentProjectileSpeed = currentProjectileSpeed
@@ -176,8 +190,14 @@ class GameObjectManager @Inject constructor(
             homingProjectiles.removeAll(homingProjectilesToRemove)
         } else {
             val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.03f)).toLong()
-            val asteroidSpawnRate = (asteroidSpawnRateBase / (1 + level * 0.05f)).toLong()
-            val enemySpawnRate = (enemySpawnRateBase / (1 + level * 0.05f)).toLong()
+            val asteroidSpawnRate = when (environment) {
+                FlightModeManager.Environment.ASTEROID_FIELD -> (asteroidSpawnRateBase / (1 + level * 0.05f) / 1.5).toLong() // More frequent in asteroid fields
+                else -> (asteroidSpawnRateBase / (1 + level * 0.05f)).toLong()
+            }
+            val enemySpawnRate = when (environment) {
+                FlightModeManager.Environment.NEBULA -> (enemySpawnRateBase / (1 + level * 0.05f) / 1.5).toLong() // More frequent in nebula
+                else -> (enemySpawnRateBase / (1 + level * 0.05f)).toLong()
+            }
 
             if (currentTime - lastPowerUpSpawnTime >= powerUpSpawnRate) {
                 spawnPowerUp(screenWidth)
@@ -186,13 +206,13 @@ class GameObjectManager @Inject constructor(
             }
 
             if (currentTime - lastAsteroidSpawnTime >= asteroidSpawnRate) {
-                spawnAsteroid(screenWidth)
+                spawnAsteroid(screenWidth, environment)
                 lastAsteroidSpawnTime = currentTime
                 Timber.d("Spawned asteroid at time: $currentTime, count: ${asteroids.size}")
             }
 
             if (currentTime - lastEnemySpawnTime >= enemySpawnRate) {
-                spawnEnemyShip(screenWidth, level)
+                spawnEnemyShip(screenWidth, level, environment)
                 lastEnemySpawnTime = currentTime
                 Timber.d("Spawned enemy ship at time: $currentTime, count: ${enemyShips.size}")
             }

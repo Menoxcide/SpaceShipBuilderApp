@@ -127,7 +127,7 @@ class CollisionManager @Inject constructor(
             if (shipRect.intersect(enemyRect) && !stealthActive && !invincibilityActive) {
                 enemyShipsToRemove.add(enemy)
                 renderer.shipRendererInstance.addCollisionParticles(shipX, shipY)
-                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, 25)
+                renderer.shipRendererInstance.addDamageTextParticle(shipX, shipY, enemy.damage.toInt())
                 audioManager.playCollisionSound()
                 glowStartTime = currentTime
                 if (Random.nextFloat() < 0.25f) {
@@ -135,7 +135,7 @@ class CollisionManager @Inject constructor(
                     gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)
                     Timber.d("Enemy ship dropped $powerUpType at (x=${enemy.x}, y=${enemy.y})")
                 }
-                Timber.d("Collided with enemy ship, HP decreased")
+                Timber.d("Collided with enemy ship, HP decreased by ${enemy.damage}")
                 onEnemyShipHit(enemy)
             }
         }
@@ -175,17 +175,27 @@ class CollisionManager @Inject constructor(
                     enemy.y + 50f
                 )
                 if (projectileRect.intersect(enemyRect)) {
-                    enemyShipsToRemove.add(enemy)
-                    projectilesToRemove.add(projectile)
-                    scoreDelta += 50
-                    renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
-                    renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
-                    if (Random.nextFloat() < 0.25f) {
-                        val powerUpType = if (Random.nextBoolean()) "star" else "power_up"
-                        gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)
-                        Timber.d("Enemy ship dropped $powerUpType at (x=${enemy.x}, y=${enemy.y})")
+                    enemy.health -= when (projectile) {
+                        is PlasmaProjectile -> 15f // Plasma deals more damage
+                        is MissileProjectile -> 20f // Missile deals even more
+                        is LaserProjectile -> 12f // Laser deals moderate damage
+                        else -> 10f // Default projectile damage
                     }
-                    Timber.d("Projectile hit enemy ship, score increased by 50")
+                    projectilesToRemove.add(projectile)
+                    renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
+                    Timber.d("Projectile hit enemy ship, health decreased to ${enemy.health}")
+                    if (enemy.health <= 0) {
+                        enemyShipsToRemove.add(enemy)
+                        scoreDelta += 50
+                        renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
+                        renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
+                        if (Random.nextFloat() < 0.25f) {
+                            val powerUpType = if (Random.nextBoolean()) "star" else "power_up"
+                            gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)
+                            Timber.d("Enemy ship dropped $powerUpType at (x=${enemy.x}, y=${enemy.y})")
+                        }
+                        Timber.d("Enemy ship destroyed, score increased by 50")
+                    }
                 }
             }
         }
@@ -193,17 +203,22 @@ class CollisionManager @Inject constructor(
             val enemyRect = RectF(enemy.x - 50f, enemy.y - 50f, enemy.x + 50f, enemy.y + 50f)
             for (projectile in homingProjectiles) {
                 if (projectile.target == enemy && projectile.checkCollision(enemyRect)) {
-                    enemyShipsToRemove.add(enemy)
+                    enemy.health -= 20f // Homing missile damage
                     homingProjectilesToRemove.add(projectile)
-                    scoreDelta += 50
-                    renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
-                    renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
-                    if (Random.nextFloat() < 0.25f) {
-                        val powerUpType = if (Random.nextBoolean()) "star" else "power_up"
-                        gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)
-                        Timber.d("Enemy ship dropped $powerUpType at (x=${enemy.x}, y=${enemy.y})")
+                    renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
+                    Timber.d("Homing missile hit enemy ship, health decreased to ${enemy.health}")
+                    if (enemy.health <= 0) {
+                        enemyShipsToRemove.add(enemy)
+                        scoreDelta += 50
+                        renderer.shipRendererInstance.addExplosionParticles(enemy.x, enemy.y)
+                        renderer.shipRendererInstance.addScoreTextParticle(enemy.x, enemy.y, "+50")
+                        if (Random.nextFloat() < 0.25f) {
+                            val powerUpType = if (Random.nextBoolean()) "star" else "power_up"
+                            gameObjectManager.spawnPowerUp(enemy.x, enemy.y, powerUpType)
+                            Timber.d("Enemy ship dropped $powerUpType at (x=${enemy.x}, y=${enemy.y})")
+                        }
+                        Timber.d("Enemy ship destroyed by homing missile, score increased by 50")
                     }
-                    Timber.d("Homing missile hit enemy ship, score increased by 50")
                 }
             }
         }

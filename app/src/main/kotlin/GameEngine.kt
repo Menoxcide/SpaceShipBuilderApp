@@ -334,6 +334,10 @@ class GameEngine @Inject constructor(
             }
         }
 
+    // Expose the current environment
+    val currentEnvironment: FlightModeManager.Environment
+        get() = flightModeManager.currentEnvironment
+
     private var userId: String? = null
 
     fun getUserId(): String = userId ?: "default_user"

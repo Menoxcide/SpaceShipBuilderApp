@@ -160,12 +160,23 @@ class MissileProjectile(x: Float, y: Float, speedX: Float, speedY: Float, screen
 class LaserProjectile(x: Float, y: Float, speedX: Float, speedY: Float, screenHeight: Float, screenWidth: Float) :
     Projectile(x, y, speedX, speedY, screenHeight, screenWidth)
 
-data class EnemyShip(var x: Float, var y: Float, var speedY: Float, var lastShotTime: Long = 0L, val shotInterval: Long) {
-    fun toMap(): Map<String, Any> {
+open class EnemyShip(
+    open var x: Float,
+    open var y: Float,
+    open var speedY: Float,
+    open var health: Float =  10f,
+    open var damage: Float = 20f,
+    open var lastShotTime: Long = 0L,
+    open val shotInterval: Long = 4000L
+) {
+    open fun toMap(): Map<String, Any> {
         return mapOf(
+            "type" to "EnemyShip",
             "x" to x,
             "y" to y,
             "speedY" to speedY,
+            "health" to health,
+            "damage" to damage,
             "lastShotTime" to lastShotTime,
             "shotInterval" to shotInterval
         )
@@ -173,14 +184,69 @@ data class EnemyShip(var x: Float, var y: Float, var speedY: Float, var lastShot
 
     companion object {
         fun fromMap(map: Map<String, Any>): EnemyShip {
-            return EnemyShip(
-                x = (map["x"] as? Double)?.toFloat() ?: 0f,
-                y = (map["y"] as? Double)?.toFloat() ?: 0f,
-                speedY = (map["speedY"] as? Double)?.toFloat() ?: 5f,
-                lastShotTime = map["lastShotTime"] as? Long ?: 0L,
-                shotInterval = map["shotInterval"] as? Long ?: 4000L
-            )
+            val type = map["type"] as? String ?: "EnemyShip"
+            val x = (map["x"] as? Double)?.toFloat() ?: 0f
+            val y = (map["y"] as? Double)?.toFloat() ?: 0f
+            val speedY = (map["speedY"] as? Double)?.toFloat() ?: 5f
+            val health = (map["health"] as? Double)?.toFloat() ?: 10f
+            val damage = (map["damage"] as? Double)?.toFloat() ?: 20f
+            val lastShotTime = map["lastShotTime"] as? Long ?: 0L
+            val shotInterval = map["shotInterval"] as? Long ?: 4000L
+
+            return when (type) {
+                "DroneEnemy" -> DroneEnemy(x, y, speedY, health, damage, lastShotTime, shotInterval)
+                "ArmoredEnemy" -> ArmoredEnemy(x, y, speedY, health, damage, lastShotTime, shotInterval)
+                else -> EnemyShip(x, y, speedY, health, damage, lastShotTime, shotInterval)
+            }
         }
+    }
+}
+
+// New DroneEnemy subclass
+data class DroneEnemy(
+    override var x: Float,
+    override var y: Float,
+    override var speedY: Float,
+    override var health: Float = 10f,
+    override var damage: Float = 10f,
+    override var lastShotTime: Long = 0L,
+    override val shotInterval: Long = 3000L // Shoots more frequently
+) : EnemyShip(x, y, speedY, health, damage, lastShotTime, shotInterval) {
+    override fun toMap(): Map<String, Any> {
+        return mapOf(
+            "type" to "DroneEnemy",
+            "x" to x,
+            "y" to y,
+            "speedY" to speedY,
+            "health" to health,
+            "damage" to damage,
+            "lastShotTime" to lastShotTime,
+            "shotInterval" to shotInterval
+        )
+    }
+}
+
+// New ArmoredEnemy subclass
+data class ArmoredEnemy(
+    override var x: Float,
+    override var y: Float,
+    override var speedY: Float,
+    override var health: Float = 50f,
+    override var damage: Float = 30f,
+    override var lastShotTime: Long = 0L,
+    override val shotInterval: Long = 5000L // Shoots less frequently
+) : EnemyShip(x, y, speedY, health, damage, lastShotTime, shotInterval) {
+    override fun toMap(): Map<String, Any> {
+        return mapOf(
+            "type" to "ArmoredEnemy",
+            "x" to x,
+            "y" to y,
+            "speedY" to speedY,
+            "health" to health,
+            "damage" to damage,
+            "lastShotTime" to lastShotTime,
+            "shotInterval" to shotInterval
+        )
     }
 }
 
