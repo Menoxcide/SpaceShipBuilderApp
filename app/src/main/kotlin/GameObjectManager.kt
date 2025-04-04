@@ -44,7 +44,8 @@ class GameObjectManager @Inject constructor(
     fun spawnPowerUp(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility")
+        val types =
+            listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility")
         val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random()
         powerUps.add(PowerUp(x, y, type))
     }
@@ -69,7 +70,7 @@ class GameObjectManager @Inject constructor(
         }
 
         if (Random.nextFloat() < asteroidProbability) {
-            asteroids.add(GiantAsteroid(x, y, size * FlightModeManager.GIANT_ASTEROID_SCALE).apply {
+            asteroids.add(GiantAsteroid(x, y, size).apply {
                 this.rotation = rotation
                 this.angularVelocity = angularVelocity
             })
@@ -147,15 +148,27 @@ class GameObjectManager @Inject constructor(
                     projectile.x + FlightModeManager.PROJECTILE_SIZE,
                     projectile.y + FlightModeManager.PROJECTILE_SIZE
                 )
-                val bossRect = RectF(localBoss.x - 75f, localBoss.y - 75f, localBoss.x + 75f, localBoss.y + 75f)
+                val bossRect = RectF(
+                    localBoss.x - 75f,
+                    localBoss.y - 75f,
+                    localBoss.x + 75f,
+                    localBoss.y + 75f
+                )
                 if (projectileRect.intersect(bossRect)) {
                     localBoss.hp -= 10f
                     projectilesToRemove.add(projectile)
                     renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
                     Timber.d("Boss hit by regular projectile, HP decreased to ${localBoss.hp}")
                     if (localBoss.hp <= 0) {
-                        renderer.shipRendererInstance.addExplosionParticles(localBoss.x, localBoss.y)
-                        renderer.shipRendererInstance.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
+                        renderer.shipRendererInstance.addExplosionParticles(
+                            localBoss.x,
+                            localBoss.y
+                        )
+                        renderer.shipRendererInstance.addScoreTextParticle(
+                            localBoss.x,
+                            localBoss.y,
+                            "+500"
+                        )
                         spawnPowerUp(localBoss.x, localBoss.y, "star")
                         spawnPowerUp(localBoss.x + 20f, localBoss.y + 20f, "power_up")
                         Timber.d("Boss defeated! Dropped star and fuel power-up at (x=${localBoss.x}, y=${localBoss.y})")
@@ -166,16 +179,31 @@ class GameObjectManager @Inject constructor(
                 }
             }
             if (localBoss != null) {
-                val bossRect = RectF(localBoss.x - 75f, localBoss.y - 75f, localBoss.x + 75f, localBoss.y + 75f)
+                val bossRect = RectF(
+                    localBoss.x - 75f,
+                    localBoss.y - 75f,
+                    localBoss.x + 75f,
+                    localBoss.y + 75f
+                )
                 for (projectile in homingProjectiles) {
                     if (projectile.target == localBoss && projectile.checkCollision(bossRect)) {
                         localBoss.hp -= 20f
                         homingProjectilesToRemove.add(projectile)
-                        renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
+                        renderer.shipRendererInstance.addExplosionParticles(
+                            projectile.x,
+                            projectile.y
+                        )
                         Timber.d("Boss hit by homing missile, HP decreased to ${localBoss.hp}")
                         if (localBoss.hp <= 0) {
-                            renderer.shipRendererInstance.addExplosionParticles(localBoss.x, localBoss.y)
-                            renderer.shipRendererInstance.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
+                            renderer.shipRendererInstance.addExplosionParticles(
+                                localBoss.x,
+                                localBoss.y
+                            )
+                            renderer.shipRendererInstance.addScoreTextParticle(
+                                localBoss.x,
+                                localBoss.y,
+                                "+500"
+                            )
                             spawnPowerUp(localBoss.x, localBoss.y, "star")
                             spawnPowerUp(localBoss.x + 20f, localBoss.y + 20f, "power_up")
                             Timber.d("Boss defeated! Dropped star and fuel power-up at (x=${localBoss.x}, y=${localBoss.y})")
@@ -228,7 +256,16 @@ class GameObjectManager @Inject constructor(
                 val angle = atan2(dy, dx)
                 val speedX = cos(angle) * currentProjectileSpeed
                 val speedY = sin(angle) * currentProjectileSpeed
-                enemyProjectiles.add(Projectile(enemy.x, enemy.y, speedX, speedY, screenHeight, screenWidth))
+                enemyProjectiles.add(
+                    Projectile(
+                        enemy.x,
+                        enemy.y,
+                        speedX,
+                        speedY,
+                        screenHeight,
+                        screenWidth
+                    )
+                )
                 enemy.lastShotTime = currentTime
                 Timber.d("Enemy shot projectile towards player")
             }

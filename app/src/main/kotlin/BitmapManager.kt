@@ -132,6 +132,30 @@ class BitmapManager @Inject constructor(
         return asteroidBitmaps[index]
     }
 
+    fun getAsteroidBitmap(spriteId: Int): Bitmap {
+        val index = spriteId.coerceIn(0, asteroidBitmaps.size - 1) // Ensure the index is within bounds
+        val bitmap = asteroidBitmaps[index]
+        if (bitmap.isRecycled) {
+            Timber.w("Asteroid bitmap $index was recycled, reinitializing")
+            asteroidBitmaps[index] = loadBitmap(
+                when (index) {
+                    0 -> R.drawable.asteroid
+                    1 -> R.drawable.asteroid_1
+                    2 -> R.drawable.asteroid_2
+                    3 -> R.drawable.asteroid_3
+                    4 -> R.drawable.asteroid_4
+                    5 -> R.drawable.asteroid_5
+                    6 -> R.drawable.asteroid_6
+                    7 -> R.drawable.asteroid_7
+                    8 -> R.drawable.asteroid_8
+                    else -> R.drawable.asteroid // Fallback
+                },
+                "Asteroid_$index"
+            )
+        }
+        return asteroidBitmaps[index]
+    }
+
     fun createPlaceholderBitmap(original: Bitmap): Bitmap {
         return Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888).apply {
             Canvas(this).apply {

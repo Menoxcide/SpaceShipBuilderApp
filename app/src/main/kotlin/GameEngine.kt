@@ -378,6 +378,7 @@ class GameEngine @Inject constructor(
                         "Default" -> WeaponType.Default
                         "Plasma" -> WeaponType.Plasma
                         "Missile" -> WeaponType.Missile
+                        "HomingMissile" -> WeaponType.HomingMissile
                         "Laser" -> WeaponType.Laser
                         else -> null
                     }
@@ -387,6 +388,7 @@ class GameEngine @Inject constructor(
                 selectedWeapon = when (doc.getString("selectedWeapon")) {
                     "Plasma" -> WeaponType.Plasma
                     "Missile" -> WeaponType.Missile
+                    "HomingMissile" -> WeaponType.HomingMissile
                     "Laser" -> WeaponType.Laser
                     else -> WeaponType.Default
                 }
@@ -707,12 +709,14 @@ class GameEngine @Inject constructor(
                     is WeaponType.Default -> "Default"
                     is WeaponType.Plasma -> "Plasma"
                     is WeaponType.Missile -> "Missile"
+                    is WeaponType.HomingMissile -> "HomingMissile"
                     is WeaponType.Laser -> "Laser"
                 }
             },
             "selectedWeapon" to when (selectedWeapon) {
                 is WeaponType.Plasma -> "Plasma"
                 is WeaponType.Missile -> "Missile"
+                is WeaponType.HomingMissile -> "HomingMissile"
                 is WeaponType.Laser -> "Laser"
                 else -> "Default"
             }

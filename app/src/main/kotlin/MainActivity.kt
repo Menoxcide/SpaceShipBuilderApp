@@ -235,7 +235,7 @@ class MainActivity : AppCompatActivity() {
                 Timber.d("onResume: Paused state after reloading: ${gameStateManager.getPausedState()}, shouldLoadPausedState=${gameStateManager.shouldLoadPausedState()}")
                 if (gameStateManager.gameState == GameState.GAME_OVER) {
                     Timber.d("onResume: Skipping paused state load due to GAME_OVER")
-                        return@let
+                    return@let
                 }
                 if (gameStateManager.shouldLoadPausedState() && gameStateManager.getPausedState() != null && gameStateManager.gameState == GameState.BUILD) {
                     gameStateManager.restoreGameState(gameEngine, gameStateManager.getPausedState()!!)
@@ -445,6 +445,7 @@ class MainActivity : AppCompatActivity() {
                 is WeaponType.Default -> "Default"
                 is WeaponType.Plasma -> "Plasma"
                 is WeaponType.Missile -> "Missile"
+                is WeaponType.HomingMissile -> "Homing Missile"
                 is WeaponType.Laser -> "Laser"
             }
         }

@@ -149,7 +149,7 @@ class FlightModeManager @Inject constructor(
                 }
             )
 
-            if (currentTime - lastDistanceUpdateTime >= 1000 && gameObjectManager.getBoss() == null) {
+            if (currentTime -lastDistanceUpdateTime >= 1000 && gameObjectManager.getBoss() == null) {
                 sessionDistanceTraveled += shipManager.currentSpeed
                 distanceTraveled += shipManager.currentSpeed
                 onDistanceTraveledChange(distanceTraveled)
@@ -446,20 +446,62 @@ class FlightModeManager @Inject constructor(
         val projectileX = shipManager.shipX
         val projectileY = shipManager.shipY - (shipManager.mergedShipBitmap?.height ?: 0) / 2f
         val projectile = when (shipManager.selectedWeapon) {
-            WeaponType.Default -> Projectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
-            WeaponType.Plasma -> PlasmaProjectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
-            WeaponType.Missile -> MissileProjectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
-            WeaponType.Laser -> LaserProjectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
+            WeaponType.Default -> Projectile(
+                projectileX,
+                projectileY,
+                0f,
+                -shipManager.currentProjectileSpeed,
+                shipManager.screenHeight,
+                shipManager.screenWidth,
+                WeaponType.Default
+            )
+            WeaponType.Plasma -> PlasmaProjectile(
+                projectileX,
+                projectileY,
+                0f,
+                -shipManager.currentProjectileSpeed,
+                shipManager.screenHeight,
+                shipManager.screenWidth,
+                WeaponType.Plasma
+            )
+            WeaponType.Missile -> MissileProjectile(
+                projectileX,
+                projectileY,
+                0f,
+                -shipManager.currentProjectileSpeed,
+                shipManager.screenHeight,
+                shipManager.screenWidth,
+                WeaponType.Missile
+            )
+            WeaponType.HomingMissile -> {
+                throw IllegalStateException("Homing missiles should be launched via launchHomingMissile, not spawnProjectile")
+            }
+            WeaponType.Laser -> LaserProjectile(
+                projectileX,
+                projectileY,
+                0f,
+                -shipManager.currentProjectileSpeed,
+                shipManager.screenHeight,
+                shipManager.screenWidth,
+                WeaponType.Laser
+            )
         }
         gameObjectManager.projectiles.add(projectile)
-        Timber.d("Spawned projectile of type ${projectile.javaClass.simpleName} at ($projectileX, $projectileY)")
+        Timber.d("Spawned projectile of type ${projectile.javaClass.simpleName} at ($projectileX, $projectileY) with weaponType ${projectile.weaponType}")
     }
 
     fun launchHomingMissile(target: Any) {
         if (shipManager.missileCount > 0 && gameStateManager.gameState == GameState.FLIGHT) {
             val projectileX = shipManager.shipX
             val projectileY = shipManager.shipY - (shipManager.mergedShipBitmap?.height ?: 0) / 2f
-            gameObjectManager.homingProjectiles.add(HomingProjectile(projectileX, projectileY, target, shipManager.screenHeight, shipManager.screenWidth))
+            val homingProjectile = HomingProjectile(target).apply {
+                this.x = projectileX
+                this.y = projectileY
+                this.screenHeight = shipManager.screenHeight
+                this.screenWidth = shipManager.screenWidth
+                this.weaponType = WeaponType.HomingMissile
+            }
+            gameObjectManager.homingProjectiles.add(homingProjectile)
             shipManager.missileCount--
             audioManager.playMissileLaunchSound()
             Timber.d("Launched homing missile towards target. Remaining missiles: ${shipManager.missileCount}")

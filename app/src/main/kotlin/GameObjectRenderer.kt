@@ -17,28 +17,13 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
     private var enemyShipBitmap: Bitmap? = null
     private var droneEnemyBitmap: Bitmap? = null // New bitmap for drones
     private var armoredEnemyBitmap: Bitmap? = null // New bitmap for armored enemies
-    private val defaultProjectilePaint = Paint().apply {
-        color = Color.WHITE
-        isAntiAlias = true
-    }
+    private val projectileBitmaps: MutableMap<WeaponType, Bitmap?> = mutableMapOf()
     private val enemyProjectilePaint = Paint().apply {
         color = Color.RED
         isAntiAlias = true
     }
     private val homingProjectilePaint = Paint().apply {
         color = Color.YELLOW
-        isAntiAlias = true
-    }
-    private val plasmaPaint = Paint().apply {
-        color = Color.MAGENTA
-        isAntiAlias = true
-    }
-    private val missilePaint = Paint().apply {
-        color = Color.RED
-        isAntiAlias = true
-    }
-    private val laserPaint = Paint().apply {
-        color = Color.BLUE
         isAntiAlias = true
     }
     private val hpBarBackgroundPaint = Paint().apply {
@@ -70,6 +55,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         const val HP_BAR_OFFSET = 20f // Distance above the boss ship
         const val ASTEROID_MIN_SCALE = 0.5f // Minimum scale when asteroid is at top
         const val ASTEROID_MAX_SCALE = 1.5f // Maximum scale when asteroid is at bottom
+        const val PROJECTILE_SIZE = 10f // Size for scaling projectile bitmaps
     }
 
     init {
@@ -84,9 +70,15 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         )
         enemyShipBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
         // Initialize new bitmaps for drone and armored enemies
-        // Note: You'll need to add these drawables to your res/drawable folder
         droneEnemyBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.drone_enemy) ?: enemyShipBitmap
         armoredEnemyBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.armored_enemy) ?: enemyShipBitmap
+
+        // Load projectile bitmaps for each weapon type
+        projectileBitmaps[WeaponType.Default] = BitmapFactory.decodeResource(context.resources, WeaponType.Default.projectileDrawableId)
+        projectileBitmaps[WeaponType.Plasma] = BitmapFactory.decodeResource(context.resources, WeaponType.Plasma.projectileDrawableId)
+        projectileBitmaps[WeaponType.Missile] = BitmapFactory.decodeResource(context.resources, WeaponType.Missile.projectileDrawableId)
+        projectileBitmaps[WeaponType.HomingMissile] = BitmapFactory.decodeResource(context.resources, WeaponType.HomingMissile.projectileDrawableId)
+        projectileBitmaps[WeaponType.Laser] = BitmapFactory.decodeResource(context.resources, WeaponType.Laser.projectileDrawableId)
     }
 
     fun drawPowerUps(canvas: Canvas, powerUps: List<PowerUp>, statusBarHeight: Float) {
@@ -102,7 +94,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
     fun drawAsteroids(canvas: Canvas, asteroids: List<Asteroid>, statusBarHeight: Float) {
         asteroids.forEach { asteroid ->
-            val bitmap = bitmapManager.getRandomAsteroidBitmap()
+            val bitmap = bitmapManager.getAsteroidBitmap(asteroid.spriteId)
             if (bitmap != null && !bitmap.isRecycled) {
                 // Calculate dynamic scale based on y-position (top = smaller, bottom = larger)
                 val yPositionFactor = (asteroid.y + statusBarHeight + bitmap.height) / (canvas.height.toFloat() + bitmap.height) // Normalize y from 0 (top) to 1 (bottom)
@@ -117,22 +109,35 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
 
-                Timber.d("Drawing asteroid at (${asteroid.x}, ${asteroid.y}) with dynamicScale=$dynamicScale, scaledWidth=$scaledWidth, scaledHeight=$scaledHeight")
+                Timber.d("Drawing asteroid at (${asteroid.x}, ${asteroid.y}) with spriteId=${asteroid.spriteId}, dynamicScale=$dynamicScale, scaledWidth=$scaledWidth, scaledHeight=$scaledHeight")
             } else {
-                Timber.w("Asteroid bitmap is null or recycled")
+                Timber.w("Asteroid bitmap for spriteId ${asteroid.spriteId} is null or recycled")
             }
         }
     }
 
     fun drawProjectiles(canvas: Canvas, projectiles: List<Projectile>, statusBarHeight: Float) {
         projectiles.forEach { projectile ->
-            val paint = when (projectile) {
-                is PlasmaProjectile -> plasmaPaint
-                is MissileProjectile -> missilePaint
-                is LaserProjectile -> laserPaint
-                else -> defaultProjectilePaint
+            val bitmap = projectileBitmaps[projectile.weaponType]
+            if (bitmap != null && !bitmap.isRecycled) {
+                // Scale the bitmap to a reasonable size for projectiles
+                val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
+                val scaledWidth = bitmap.width * scale
+                val scaledHeight = bitmap.height * scale
+                canvas.save()
+                canvas.translate(projectile.x - scaledWidth / 2f, projectile.y - scaledHeight / 2f + statusBarHeight)
+                canvas.scale(scale, scale)
+                canvas.drawBitmap(bitmap, 0f, 0f, null)
+                canvas.restore()
+            } else {
+                Timber.w("Projectile bitmap for weaponType ${projectile.weaponType} is null or recycled")
+                // Fallback: Draw a white circle if the bitmap is unavailable
+                val paint = Paint().apply {
+                    color = Color.WHITE
+                    isAntiAlias = true
+                }
+                canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, paint)
             }
-            canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, paint)
         }
     }
 
@@ -228,7 +233,21 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
     fun drawHomingProjectiles(canvas: Canvas, homingProjectiles: List<HomingProjectile>, statusBarHeight: Float) {
         homingProjectiles.forEach { projectile ->
-            canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, homingProjectilePaint)
+            val bitmap = projectileBitmaps[projectile.weaponType]
+            if (bitmap != null && !bitmap.isRecycled) {
+                // Scale the bitmap to a reasonable size for projectiles
+                val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
+                val scaledWidth = bitmap.width * scale
+                val scaledHeight = bitmap.height * scale
+                canvas.save()
+                canvas.translate(projectile.x - scaledWidth / 2f, projectile.y - scaledHeight / 2f + statusBarHeight)
+                canvas.scale(scale, scale)
+                canvas.drawBitmap(bitmap, 0f, 0f, null)
+                canvas.restore()
+            } else {
+                Timber.w("Homing projectile bitmap for weaponType ${projectile.weaponType} is null or recycled")
+                canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, homingProjectilePaint)
+            }
         }
     }
 
@@ -237,6 +256,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         enemyShipBitmap?.recycle()
         droneEnemyBitmap?.recycle()
         armoredEnemyBitmap?.recycle()
+        projectileBitmaps.values.forEach { it?.recycle() }
         bitmapManager.onDestroy()
         Timber.d("GameObjectRenderer onDestroy called, bitmaps recycled")
     }
