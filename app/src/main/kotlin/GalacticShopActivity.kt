@@ -24,11 +24,17 @@ class GalacticShopActivity : AppCompatActivity() {
     private lateinit var buySpeedBoostExtenderButton: Button
     private lateinit var buyMissileSlotButton: Button
     private lateinit var buyFuelTankUpgradeButton: Button
+    private lateinit var buyPlasmaWeaponButton: Button
+    private lateinit var buyMissileWeaponButton: Button
+    private lateinit var buyLaserWeaponButton: Button
     private lateinit var reviveCountText: TextView
     private lateinit var destroyAllChargesText: TextView
     private lateinit var speedBoostExtenderStatus: TextView
     private lateinit var missileSlotCountText: TextView
     private lateinit var fuelTankUpgradeStatus: TextView
+    private lateinit var plasmaWeaponStatus: TextView
+    private lateinit var missileWeaponStatus: TextView
+    private lateinit var laserWeaponStatus: TextView
     private lateinit var shipSet2Image: ImageView
     private lateinit var shipSet3Image: ImageView
     private lateinit var shipSet2Tooltip: TextView
@@ -47,11 +53,17 @@ class GalacticShopActivity : AppCompatActivity() {
         buySpeedBoostExtenderButton = findViewById(R.id.buySpeedBoostExtenderButton)
         buyMissileSlotButton = findViewById(R.id.buyMissileSlotButton)
         buyFuelTankUpgradeButton = findViewById(R.id.buyFuelTankUpgradeButton)
+        buyPlasmaWeaponButton = findViewById(R.id.buyPlasmaWeaponButton)
+        buyMissileWeaponButton = findViewById(R.id.buyMissileWeaponButton)
+        buyLaserWeaponButton = findViewById(R.id.buyLaserWeaponButton)
         reviveCountText = findViewById(R.id.reviveCountText)
         destroyAllChargesText = findViewById(R.id.destroyAllChargesText)
         speedBoostExtenderStatus = findViewById(R.id.speedBoostExtenderStatus)
         missileSlotCountText = findViewById(R.id.missileSlotCountText)
         fuelTankUpgradeStatus = findViewById(R.id.fuelTankUpgradeStatus)
+        plasmaWeaponStatus = findViewById(R.id.plasmaWeaponStatus)
+        missileWeaponStatus = findViewById(R.id.missileWeaponStatus)
+        laserWeaponStatus = findViewById(R.id.laserWeaponStatus)
         shipSet2Image = findViewById(R.id.shipSet2Image)
         shipSet3Image = findViewById(R.id.shipSet3Image)
         shipSet2Tooltip = findViewById(R.id.shipSet2Tooltip)
@@ -179,6 +191,42 @@ class GalacticShopActivity : AppCompatActivity() {
             }
         }
 
+        // Buy Plasma Weapon
+        buyPlasmaWeaponButton.setOnClickListener {
+            if (gameEngine.starsCollected >= 50 && gameEngine.level >= 10 && WeaponType.Plasma !in gameEngine.unlockedWeapons) {
+                gameEngine.starsCollected -= 50
+                gameEngine.unlockedWeapons.add(WeaponType.Plasma)
+                updateUI()
+                Timber.d("Purchased Plasma Weapon for 50 stars")
+            } else {
+                Timber.d("Cannot buy Plasma Weapon: stars=${gameEngine.starsCollected}, level=${gameEngine.level}, alreadyPurchased=${WeaponType.Plasma in gameEngine.unlockedWeapons}")
+            }
+        }
+
+        // Buy Missile Weapon
+        buyMissileWeaponButton.setOnClickListener {
+            if (gameEngine.starsCollected >= 75 && gameEngine.level >= 20 && WeaponType.Missile !in gameEngine.unlockedWeapons) {
+                gameEngine.starsCollected -= 75
+                gameEngine.unlockedWeapons.add(WeaponType.Missile)
+                updateUI()
+                Timber.d("Purchased Missile Weapon for 75 stars")
+            } else {
+                Timber.d("Cannot buy Missile Weapon: stars=${gameEngine.starsCollected}, level=${gameEngine.level}, alreadyPurchased=${WeaponType.Missile in gameEngine.unlockedWeapons}")
+            }
+        }
+
+        // Buy Laser Weapon
+        buyLaserWeaponButton.setOnClickListener {
+            if (gameEngine.starsCollected >= 100 && gameEngine.level >= 30 && WeaponType.Laser !in gameEngine.unlockedWeapons) {
+                gameEngine.starsCollected -= 100
+                gameEngine.unlockedWeapons.add(WeaponType.Laser)
+                updateUI()
+                Timber.d("Purchased Laser Weapon for 100 stars")
+            } else {
+                Timber.d("Cannot buy Laser Weapon: stars=${gameEngine.starsCollected}, level=${gameEngine.level}, alreadyPurchased=${WeaponType.Laser in gameEngine.unlockedWeapons}")
+            }
+        }
+
         // Back Button
         findViewById<Button>(R.id.backButton).setOnClickListener {
             finish()
@@ -196,6 +244,9 @@ class GalacticShopActivity : AppCompatActivity() {
         speedBoostExtenderStatus.text = if (gameEngine.speedBoostExtended) "Purchased" else "Not Purchased"
         missileSlotCountText.text = "Extra Slots: ${gameEngine.extraMissileSlots}/2"
         fuelTankUpgradeStatus.text = if (gameEngine.fuelTankUpgraded) "Purchased" else "Not Purchased"
+        plasmaWeaponStatus.text = if (WeaponType.Plasma in gameEngine.unlockedWeapons) "Purchased" else "Not Purchased"
+        missileWeaponStatus.text = if (WeaponType.Missile in gameEngine.unlockedWeapons) "Purchased" else "Not Purchased"
+        laserWeaponStatus.text = if (WeaponType.Laser in gameEngine.unlockedWeapons) "Purchased" else "Not Purchased"
 
         val unlockedSets = gameEngine.getUnlockedShipSets()
         unlockShipSet2Button.isEnabled = gameEngine.level >= 20 && gameEngine.starsCollected >= 20 && 1 !in unlockedSets
@@ -205,6 +256,9 @@ class GalacticShopActivity : AppCompatActivity() {
         buySpeedBoostExtenderButton.isEnabled = gameEngine.level >= 25 && gameEngine.starsCollected >= 30 && !gameEngine.speedBoostExtended
         buyMissileSlotButton.isEnabled = gameEngine.level >= 30 && gameEngine.starsCollected >= 35 && gameEngine.extraMissileSlots < 2
         buyFuelTankUpgradeButton.isEnabled = gameEngine.level >= 15 && gameEngine.starsCollected >= 20 && !gameEngine.fuelTankUpgraded
+        buyPlasmaWeaponButton.isEnabled = gameEngine.level >= 10 && gameEngine.starsCollected >= 50 && WeaponType.Plasma !in gameEngine.unlockedWeapons
+        buyMissileWeaponButton.isEnabled = gameEngine.level >= 20 && gameEngine.starsCollected >= 75 && WeaponType.Missile !in gameEngine.unlockedWeapons
+        buyLaserWeaponButton.isEnabled = gameEngine.level >= 30 && gameEngine.starsCollected >= 100 && WeaponType.Laser !in gameEngine.unlockedWeapons
     }
 
     override fun onDestroy() {

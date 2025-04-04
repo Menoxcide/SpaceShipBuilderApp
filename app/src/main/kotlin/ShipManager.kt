@@ -33,7 +33,7 @@ class ShipManager @Inject constructor(
     var missileCount = 3
         get() = field.coerceAtMost(maxMissiles)
         set(value) { field = value.coerceIn(0, maxMissiles) }
-    var maxMissiles = 3 // Remove custom getter, managed by GameEngine
+    var maxMissiles = 3 // Managed by GameEngine, no custom getter here
 
     var shipColor: String = "default"
     var selectedShipSet: Int = 0
@@ -63,6 +63,8 @@ class ShipManager @Inject constructor(
 
     var destroyAllCharges: Int = 0
         set(value) { field = value.coerceIn(0, 3) }
+
+    var selectedWeapon: WeaponType = WeaponType.Default // New property for weapon selection
 
     fun updateUnlockedShipSets(highestLevel: Int, starsCollected: Int) {
         unlockedShipSets.clear()
@@ -123,7 +125,8 @@ class ShipManager @Inject constructor(
         Timber.d("Applied ship set $selectedShipSet characteristics: speed=$currentSpeed, projectileSpeed=$currentProjectileSpeed, maxMissiles=$maxMissiles, maxHp=$maxHp, isResuming=$isResuming, hp=$hp, fuel=$fuel")
     }
 
-    fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, isResuming: Boolean = false) {
+    fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, isResuming: Boolean = false, selectedWeapon: WeaponType = WeaponType.Default) {
+        this.selectedWeapon = selectedWeapon // Set the selected weapon
         if (!isResuming) {
             fuel = 50f
             hp = maxHp
@@ -158,7 +161,7 @@ class ShipManager @Inject constructor(
             missileCount = maxMissiles
         }
         applyShipSetCharacteristics(isResuming)
-        Timber.d("Ship launched: totalShipHeight=$totalShipHeight, maxPartHalfWidth=$maxPartHalfWidth, isResuming=$isResuming, missileCount=$missileCount, hp=$hp, fuel=$fuel")
+        Timber.d("Ship launched: totalShipHeight=$totalShipHeight, maxPartHalfWidth=$maxPartHalfWidth, isResuming=$isResuming, missileCount=$missileCount, hp=$hp, fuel=$fuel, selectedWeapon=$selectedWeapon")
     }
 
     fun moveShip(direction: Int) {

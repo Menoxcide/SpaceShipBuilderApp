@@ -249,7 +249,7 @@ class FlightModeManager @Inject constructor(
                     ::resetFlightData,
                     { _ -> },
                     userId,
-                    gameEngine.get() // Pass gameEngine here
+                    gameEngine.get()
                 )
                 val canContinueWithAd = adContinuesUsed < maxAdContinues
                 val canUseRevive = shipManager.reviveCount > 0
@@ -266,7 +266,7 @@ class FlightModeManager @Inject constructor(
                         ::resetFlightData,
                         { _ -> },
                         userId,
-                        gameEngine.get() // Pass gameEngine here
+                        gameEngine.get()
                     )
                     Timber.d("Player continued after ad, continues used: $continuesUsed, ad continues used: $adContinuesUsed")
                 }
@@ -284,7 +284,7 @@ class FlightModeManager @Inject constructor(
                             ::resetFlightData,
                             { _ -> },
                             userId,
-                            gameEngine.get() // Pass gameEngine here
+                            gameEngine.get()
                         )
                         Timber.d("Player used a revive, revives remaining: ${shipManager.reviveCount}, continues used: $continuesUsed")
                     } else {
@@ -333,7 +333,7 @@ class FlightModeManager @Inject constructor(
                         ::resetFlightData,
                         { _ -> },
                         userId,
-                        gameEngine.get() // Pass gameEngine here
+                        gameEngine.get()
                     )
                     gameObjectManager.clearGameObjects()
                     powerUpManager.resetPowerUpEffects()
@@ -389,15 +389,22 @@ class FlightModeManager @Inject constructor(
     fun launchShip(screenWidth: Float, screenHeight: Float, sortedParts: List<Part>, userId: String?) {
         this.userId = userId ?: "default_user"
         val isResuming = gameStateManager.getPausedState() != null
-        shipManager.launchShip(screenWidth, screenHeight, sortedParts, isResuming)
+        shipManager.launchShip(screenWidth, screenHeight, sortedParts, isResuming, gameEngine.get().selectedWeapon)
         gameStateManager.setGameState(GameState.FLIGHT, screenWidth, screenHeight, ::resetFlightData, { _ -> }, this.userId, gameEngine.get())
-        Timber.d("launchShip called with userId: $userId, isResuming: $isResuming")
+        Timber.d("launchShip called with userId: $userId, isResuming: $isResuming, selectedWeapon: ${gameEngine.get().selectedWeapon}")
     }
 
     fun spawnProjectile() {
         val projectileX = shipManager.shipX
         val projectileY = shipManager.shipY - (shipManager.mergedShipBitmap?.height ?: 0) / 2f
-        gameObjectManager.projectiles.add(Projectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth))
+        val projectile = when (shipManager.selectedWeapon) {
+            WeaponType.Default -> Projectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
+            WeaponType.Plasma -> PlasmaProjectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
+            WeaponType.Missile -> MissileProjectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
+            WeaponType.Laser -> LaserProjectile(projectileX, projectileY, 0f, -shipManager.currentProjectileSpeed, shipManager.screenHeight, shipManager.screenWidth)
+        }
+        gameObjectManager.projectiles.add(projectile)
+        Timber.d("Spawned projectile of type ${projectile.javaClass.simpleName} at ($projectileX, $projectileY)")
     }
 
     fun launchHomingMissile(target: Any) {

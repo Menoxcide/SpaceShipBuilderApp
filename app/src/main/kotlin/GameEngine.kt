@@ -93,7 +93,7 @@ class GameEngine @Inject constructor(
         get() = flightModeManager.shipManager.selectedShipSet
         set(value) {
             flightModeManager.shipManager.selectedShipSet = value
-            flightModeManager.shipManager.maxMissiles = calculateMaxMissiles() // Update maxMissiles on set
+            flightModeManager.shipManager.maxMissiles = calculateMaxMissiles()
             if (userId != null) {
                 savePersistentData(userId!!)
             }
@@ -133,7 +133,6 @@ class GameEngine @Inject constructor(
             }
         }
 
-    // New persistent properties for Galactic Shop upgrades
     var speedBoostExtended: Boolean = false
         set(value) {
             field = value
@@ -317,6 +316,24 @@ class GameEngine @Inject constructor(
     val fuelCapacity: Float
         get() = flightModeManager.shipManager.fuelCapacity
 
+    // New weapon-related properties
+    var unlockedWeapons: MutableSet<WeaponType> = mutableSetOf(WeaponType.Default)
+        set(value) {
+            field = value
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
+
+    var selectedWeapon: WeaponType = WeaponType.Default
+        set(value) {
+            field = value
+            flightModeManager.shipManager.selectedWeapon = value // Sync with ShipManager
+            if (userId != null) {
+                savePersistentData(userId!!)
+            }
+        }
+
     private var userId: String? = null
 
     fun getUserId(): String = userId ?: "default_user"
@@ -345,14 +362,34 @@ class GameEngine @Inject constructor(
                 experience = doc.getLong("experience") ?: 0L
                 val loadedSkills = doc.get("skills") as? Map<String, Long> ?: emptyMap()
                 loadedSkills.forEach { (key, value) -> skillManager.skills[key] = value.toInt() }
-                // Load new shop upgrades
                 speedBoostExtended = doc.getBoolean("speedBoostExtended") ?: false
                 extraMissileSlots = doc.getLong("extraMissileSlots")?.toInt() ?: 0
                 fuelTankUpgraded = doc.getBoolean("fuelTankUpgraded") ?: false
-                updateUnlockedShipSets()
-                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, experience=$experience, skills=${skillManager.skills}, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded")
 
-                // Load paused state only if not in GAME_OVER or BUILD after game over
+                // Load unlocked weapons
+                val unlockedWeaponsList = doc.get("unlockedWeapons") as? List<String> ?: listOf("Default")
+                unlockedWeapons.clear()
+                unlockedWeapons.addAll(unlockedWeaponsList.mapNotNull {
+                    when (it) {
+                        "Default" -> WeaponType.Default
+                        "Plasma" -> WeaponType.Plasma
+                        "Missile" -> WeaponType.Missile
+                        "Laser" -> WeaponType.Laser
+                        else -> null
+                    }
+                })
+
+                // Load selected weapon
+                selectedWeapon = when (doc.getString("selectedWeapon")) {
+                    "Plasma" -> WeaponType.Plasma
+                    "Missile" -> WeaponType.Missile
+                    "Laser" -> WeaponType.Laser
+                    else -> WeaponType.Default
+                }
+
+                updateUnlockedShipSets()
+                Timber.d("Loaded user data for $userId: level=$level, shipColor=$shipColor, selectedShipSet=$selectedShipSet, distanceTraveled=$distanceTraveled, longestDistanceTraveled=$longestDistanceTraveled, highestScore=$highestScore, highestLevel=$highestLevel, starsCollected=$starsCollected, reviveCount=$reviveCount, destroyAllCharges=$destroyAllCharges, missilesLaunched=$missilesLaunched, bossesDefeated=$bossesDefeated, skillPoints=${skillManager.skillPoints}, experience=$experience, skills=${skillManager.skills}, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded, unlockedWeapons=$unlockedWeapons, selectedWeapon=$selectedWeapon")
+
                 if (gameStateManager.gameState != GameState.GAME_OVER) {
                     gameStateManager.loadPausedStateFromFirebase(userId, flightModeManager.gameObjectManager)
                     val loadedPausedState = gameStateManager.getPausedState()
@@ -384,7 +421,9 @@ class GameEngine @Inject constructor(
                     "skills" to skillManager.skills,
                     "speedBoostExtended" to false,
                     "extraMissileSlots" to 0,
-                    "fuelTankUpgraded" to false
+                    "fuelTankUpgraded" to false,
+                    "unlockedWeapons" to listOf("Default"),
+                    "selectedWeapon" to "Default"
                 )
                 db.collection("users").document(userId).set(userData).await()
                 level = 1
@@ -410,8 +449,10 @@ class GameEngine @Inject constructor(
                 speedBoostExtended = false
                 extraMissileSlots = 0
                 fuelTankUpgraded = false
+                unlockedWeapons = mutableSetOf(WeaponType.Default)
+                selectedWeapon = WeaponType.Default
                 updateUnlockedShipSets()
-                gameStateManager.resetPausedState() // Reset paused state for new user
+                gameStateManager.resetPausedState()
                 Timber.d("Initialized new user data for $userId")
             }
             achievementManager.loadAchievements(userId)
@@ -440,8 +481,10 @@ class GameEngine @Inject constructor(
             speedBoostExtended = false
             extraMissileSlots = 0
             fuelTankUpgraded = false
+            unlockedWeapons = mutableSetOf(WeaponType.Default)
+            selectedWeapon = WeaponType.Default
             updateUnlockedShipSets()
-            gameStateManager.resetPausedState() // Reset on error
+            gameStateManager.resetPausedState()
             Timber.w("Using default user data due to Firestore error")
         }
     }
@@ -636,7 +679,6 @@ class GameEngine @Inject constructor(
     }
 
     fun savePersistentData(userId: String) {
-        // Ensure this does not interfere with gameState
         val userData = hashMapOf(
             "level" to level,
             "shipColor" to shipColor,
@@ -655,10 +697,24 @@ class GameEngine @Inject constructor(
             "skills" to skillManager.skills,
             "speedBoostExtended" to speedBoostExtended,
             "extraMissileSlots" to extraMissileSlots,
-            "fuelTankUpgraded" to fuelTankUpgraded
+            "fuelTankUpgraded" to fuelTankUpgraded,
+            "unlockedWeapons" to unlockedWeapons.map {
+                when (it) {
+                    is WeaponType.Default -> "Default"
+                    is WeaponType.Plasma -> "Plasma"
+                    is WeaponType.Missile -> "Missile"
+                    is WeaponType.Laser -> "Laser"
+                }
+            },
+            "selectedWeapon" to when (selectedWeapon) {
+                is WeaponType.Plasma -> "Plasma"
+                is WeaponType.Missile -> "Missile"
+                is WeaponType.Laser -> "Laser"
+                else -> "Default"
+            }
         )
         db.collection("users").document(userId).set(userData)
-            .addOnSuccessListener { Timber.d("Saved persistent user data for $userId, experience: $experience, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUp  = $speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded") }
+            .addOnSuccessListener { Timber.d("Saved persistent user data for $userId, experience: $experience, speedBoostExtended=$speedBoostExtended, extraMissileSlots=$extraMissileSlots, fuelTankUpgraded=$fuelTankUpgraded, unlockedWeapons=$unlockedWeapons, selectedWeapon=$selectedWeapon") }
             .addOnFailureListener { e -> Timber.e(e, "Failed to save persistent user data for $userId: ${e.message}") }
     }
 
@@ -684,11 +740,10 @@ class GameEngine @Inject constructor(
         Timber.d("Added $score to experience, new total: $experience")
     }
 
-    // Reset all paused state-related fields
     fun resetPausedState() {
         Timber.d("Resetting paused state in GameEngine")
-        shipX = screenWidth / 2f // Default center position
-        shipY = screenHeight / 2f // Default center position
+        shipX = screenWidth / 2f
+        shipY = screenHeight / 2f
         hp = flightModeManager.shipManager.maxHp
         fuel = 0f
         missileCount = flightModeManager.shipManager.maxMissiles

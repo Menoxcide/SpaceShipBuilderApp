@@ -1,141 +1,159 @@
 package com.example.spaceshipbuilderapp
 
-import android.graphics.*
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
 
-class GameObjectRenderer @Inject constructor(
-    private val bitmapManager: BitmapManager
-) {
-    private val powerUpPaint = Paint().apply { isAntiAlias = true }
-    private val asteroidPaint = Paint().apply { isAntiAlias = true; color = Color.RED }
-    private val projectilePaint = Paint().apply { isAntiAlias = true; color = Color.WHITE }
-    private val enemyProjectilePaint = Paint().apply { isAntiAlias = true }
-    private val bossPaint = Paint().apply { isAntiAlias = true; color = Color.RED }
-    private val bossHpBarPaint = Paint().apply {
-        isAntiAlias = true
-        style = Paint.Style.FILL
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
-    }
-    private val bossHpBarBorderPaint = Paint().apply {
-        isAntiAlias = true
+class GameObjectRenderer @Inject constructor(@ApplicationContext private val context: Context) {
+    private lateinit var powerUpBitmaps: Map<String, Bitmap?>
+    private var asteroidBitmap: Bitmap? = null
+    private var giantAsteroidBitmap: Bitmap? = null
+    private var enemyShipBitmap: Bitmap? = null
+    private val defaultProjectilePaint = Paint().apply {
         color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 2f
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        isAntiAlias = true
     }
-    private val homingProjectilePaint = Paint().apply { isAntiAlias = true }
+    private val enemyProjectilePaint = Paint().apply {
+        color = Color.RED
+        isAntiAlias = true
+    }
+    private val homingProjectilePaint = Paint().apply {
+        color = Color.YELLOW
+        isAntiAlias = true
+    }
+    private val plasmaPaint = Paint().apply {
+        color = Color.MAGENTA
+        isAntiAlias = true
+    }
+    private val missilePaint = Paint().apply {
+        color = Color.RED
+        isAntiAlias = true
+    }
+    private val laserPaint = Paint().apply {
+        color = Color.BLUE
+        isAntiAlias = true
+    }
+
+    private val bitmapManager: BitmapManager = BitmapManager(context) // Local instance for boss bitmaps
+
+    companion object {
+        const val ENEMY_SHIP_SCALE = 0.5f // Scaling factor for enemy ships
+        const val BOSS_SHIP_SCALE = 0.7f // Scaling factor for boss ships
+    }
+
+    init {
+        powerUpBitmaps = mapOf(
+            "power_up" to BitmapFactory.decodeResource(context.resources, R.drawable.power_up_icon),
+            "shield" to BitmapFactory.decodeResource(context.resources, R.drawable.shield_icon),
+            "speed" to BitmapFactory.decodeResource(context.resources, R.drawable.speed_icon),
+            "stealth" to BitmapFactory.decodeResource(context.resources, R.drawable.stealth_icon),
+            "warp" to BitmapFactory.decodeResource(context.resources, R.drawable.warp_icon),
+            "star" to BitmapFactory.decodeResource(context.resources, R.drawable.star_icon),
+            "invincibility" to BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
+        )
+        asteroidBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.asteroid)
+        enemyShipBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
+        // Note: bossShipBitmap is no longer initialized here; we'll fetch it dynamically
+    }
 
     fun drawPowerUps(canvas: Canvas, powerUps: List<PowerUp>, statusBarHeight: Float) {
-        if (BuildConfig.DEBUG) Timber.d("Drawing ${powerUps.size} power-ups")
         powerUps.forEach { powerUp ->
-            val y = powerUp.y
-            val bitmap = when (powerUp.type) {
-                "shield" -> bitmapManager.getBitmap(R.drawable.shield_icon, "Shield")
-                "speed" -> bitmapManager.getBitmap(R.drawable.speed_icon, "Speed")
-                "power_up" -> bitmapManager.getBitmap(R.drawable.power_up, "Power-up")
-                "stealth" -> bitmapManager.getBitmap(R.drawable.stealth_icon, "Stealth")
-                "warp" -> bitmapManager.getBitmap(R.drawable.warp_icon, "Warp")
-                "star" -> bitmapManager.getBitmap(R.drawable.star, "Star")
-                "invincibility" -> bitmapManager.getBitmap(R.drawable.invincibility_icon, "Invincibility")
-                else -> bitmapManager.getBitmap(R.drawable.power_up, "Default Power-up")
+            val bitmap = powerUpBitmaps[powerUp.type]
+            if (bitmap != null && !bitmap.isRecycled) {
+                canvas.drawBitmap(bitmap, powerUp.x - bitmap.width / 2f, powerUp.y - bitmap.height / 2f + statusBarHeight, null)
+            } else {
+                Timber.w("Bitmap for power-up ${powerUp.type} is null or recycled")
             }
-            val x = powerUp.x - bitmap.width / 2f
-            canvas.drawBitmap(bitmap, x, y - bitmap.height / 2f, powerUpPaint)
-            if (BuildConfig.DEBUG) Timber.d("Drawing power-up at (x=${powerUp.x}, y=$y)")
         }
     }
 
     fun drawAsteroids(canvas: Canvas, asteroids: List<Asteroid>, statusBarHeight: Float) {
-        if (BuildConfig.DEBUG) Timber.d("Drawing ${asteroids.size} asteroids")
         asteroids.forEach { asteroid ->
-            val y = asteroid.y
-            val x = asteroid.x - asteroid.size
-            val bitmap = bitmapManager.getBitmap(R.drawable.asteroid, "Asteroid")
-            val scaledBitmap = Bitmap.createScaledBitmap(
-                bitmap,
-                (asteroid.size * 2).toInt(),
-                (asteroid.size * 2).toInt(),
-                true
-            )
-            canvas.save()
-            canvas.translate(x + asteroid.size, y)
-            canvas.rotate(asteroid.rotation * (180f / Math.PI.toFloat()))
-            canvas.drawBitmap(scaledBitmap, -asteroid.size, -asteroid.size, asteroidPaint)
-            canvas.restore()
-            if (BuildConfig.DEBUG) Timber.d("Drawing asteroid at (x=${asteroid.x}, y=$y) with size=${asteroid.size}")
+            val bitmap = if (asteroid is GiantAsteroid) giantAsteroidBitmap else asteroidBitmap
+            if (bitmap != null && !bitmap.isRecycled) {
+                val scaledWidth = bitmap.width * asteroid.size / bitmap.width
+                val scaledHeight = bitmap.height * asteroid.size / bitmap.height
+                canvas.save()
+                canvas.translate(asteroid.x - scaledWidth / 2f, asteroid.y - scaledHeight / 2f + statusBarHeight)
+                canvas.rotate(asteroid.rotation, scaledWidth / 2f, scaledHeight / 2f)
+                canvas.scale(asteroid.size / bitmap.width, asteroid.size / bitmap.height)
+                canvas.drawBitmap(bitmap, 0f, 0f, null)
+                canvas.restore()
+            } else {
+                Timber.w("Asteroid bitmap is null or recycled")
+            }
         }
     }
 
     fun drawProjectiles(canvas: Canvas, projectiles: List<Projectile>, statusBarHeight: Float) {
-        if (BuildConfig.DEBUG) Timber.d("Drawing ${projectiles.size} projectiles")
         projectiles.forEach { projectile ->
-            canvas.drawCircle(projectile.x, projectile.y, FlightModeManager.PROJECTILE_SIZE, projectilePaint)
-            if (BuildConfig.DEBUG) Timber.d("Drawing projectile at (x=${projectile.x}, y=${projectile.y})")
+            val paint = when (projectile) {
+                is PlasmaProjectile -> plasmaPaint
+                is MissileProjectile -> missilePaint
+                is LaserProjectile -> laserPaint
+                else -> defaultProjectilePaint
+            }
+            canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, paint)
         }
     }
 
     fun drawEnemyShips(canvas: Canvas, enemyShips: List<EnemyShip>, statusBarHeight: Float) {
-        if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyShips.size} enemy ships")
-        enemyShips.forEach { enemy ->
-            val bitmap = bitmapManager.getBitmap(R.drawable.enemy_ship, "Enemy ship")
-            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 100, 100, true)
-            canvas.drawBitmap(scaledBitmap, enemy.x - 50f, enemy.y - 50f, asteroidPaint)
-            if (BuildConfig.DEBUG) Timber.d("Drawing enemy ship at (x=${enemy.x}, y=${enemy.y})")
+        enemyShips.forEach { enemyShip ->
+            if (enemyShipBitmap != null && !enemyShipBitmap!!.isRecycled) {
+                val scaledWidth = enemyShipBitmap!!.width * ENEMY_SHIP_SCALE
+                val scaledHeight = enemyShipBitmap!!.height * ENEMY_SHIP_SCALE
+                canvas.save()
+                canvas.translate(enemyShip.x - scaledWidth / 2f, enemyShip.y - scaledHeight / 2f + statusBarHeight)
+                canvas.scale(ENEMY_SHIP_SCALE, ENEMY_SHIP_SCALE)
+                canvas.drawBitmap(enemyShipBitmap!!, 0f, 0f, null)
+                canvas.restore()
+            } else {
+                Timber.w("Enemy ship bitmap is null or recycled")
+            }
         }
     }
 
     fun drawBoss(canvas: Canvas, boss: BossShip?, statusBarHeight: Float) {
-        if (boss == null) return
-        if (BuildConfig.DEBUG) Timber.d("Drawing boss at (x=${boss.x}, y=${boss.y}) with tier=${boss.tier}")
-        val bitmapIndex = (boss.tier - 1) % 3
-        val resourceId = when (bitmapIndex) {
-            0 -> R.drawable.boss_ship_1
-            1 -> R.drawable.boss_ship_2
-            2 -> R.drawable.boss_ship_3
-            else -> R.drawable.boss_ship_1
+        if (boss != null) {
+            val bossShipBitmap = bitmapManager.getBossShipBitmap(boss.tier)
+            if (bossShipBitmap != null && !bossShipBitmap.isRecycled) {
+                val scaledWidth = bossShipBitmap.width * BOSS_SHIP_SCALE
+                val scaledHeight = bossShipBitmap.height * BOSS_SHIP_SCALE
+                canvas.save()
+                canvas.translate(boss.x - scaledWidth / 2f, boss.y - scaledHeight / 2f + statusBarHeight)
+                canvas.scale(BOSS_SHIP_SCALE, BOSS_SHIP_SCALE)
+                canvas.drawBitmap(bossShipBitmap, 0f, 0f, null)
+                canvas.restore()
+            } else {
+                Timber.w("Boss ship bitmap for tier ${boss.tier} is null or recycled")
+            }
         }
-        val bitmap = bitmapManager.getBitmap(resourceId, "Boss ship $bitmapIndex")
-        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 150, 150, true)
-        canvas.drawBitmap(scaledBitmap, boss.x - 75f, boss.y - 75f, bossPaint)
-
-        val barWidth = 150f
-        val barHeight = 10f
-        val barX = boss.x - barWidth / 2f
-        val barY = boss.y - 75f - barHeight - 5f
-        val hpFraction = (boss.hp / boss.maxHp).coerceIn(0f, 1f)
-        val filledWidth = barWidth * hpFraction
-
-        val red = (255 * (1 - hpFraction)).toInt()
-        val green = (255 * hpFraction).toInt()
-        bossHpBarPaint.color = Color.rgb(red, green, 0)
-
-        canvas.drawRect(barX, barY, barX + filledWidth, barY + barHeight, bossHpBarPaint)
-        canvas.drawRect(barX, barY, barX + barWidth, barY + barHeight, bossHpBarBorderPaint)
     }
 
     fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<Projectile>, statusBarHeight: Float) {
-        if (BuildConfig.DEBUG) Timber.d("Drawing ${enemyProjectiles.size} enemy projectiles")
         enemyProjectiles.forEach { projectile ->
-            val bitmap = bitmapManager.getBitmap(R.drawable.boss_projectile, "Boss projectile")
-            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 20, 20, true)
-            canvas.drawBitmap(scaledBitmap, projectile.x - scaledBitmap.width / 2f, projectile.y - scaledBitmap.height / 2f, enemyProjectilePaint)
-            if (BuildConfig.DEBUG) Timber.d("Drawing enemy projectile at (x=${projectile.x}, y=${projectile.y})")
+            canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, enemyProjectilePaint)
         }
     }
 
     fun drawHomingProjectiles(canvas: Canvas, homingProjectiles: List<HomingProjectile>, statusBarHeight: Float) {
-        if (BuildConfig.DEBUG) Timber.d("Drawing ${homingProjectiles.size} homing projectiles")
         homingProjectiles.forEach { projectile ->
-            val bitmap = bitmapManager.getBitmap(R.drawable.homing_missile, "Homing missile")
-            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 20, 20, true)
-            canvas.drawBitmap(
-                scaledBitmap,
-                projectile.x - scaledBitmap.width / 2f,
-                projectile.y - scaledBitmap.height / 2f,
-                homingProjectilePaint
-            )
-            if (BuildConfig.DEBUG) Timber.d("Drawing homing projectile at (x=${projectile.x}, y=${projectile.y})")
+            canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, homingProjectilePaint)
         }
+    }
+
+    fun onDestroy() {
+        powerUpBitmaps.values.forEach { it?.recycle() }
+        asteroidBitmap?.recycle()
+        giantAsteroidBitmap?.recycle()
+        enemyShipBitmap?.recycle()
+        bitmapManager.onDestroy() // Clean up BitmapManager bitmaps
+        Timber.d("GameObjectRenderer onDestroy called, bitmaps recycled")
     }
 }

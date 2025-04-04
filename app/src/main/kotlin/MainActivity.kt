@@ -212,7 +212,6 @@ class MainActivity : AppCompatActivity() {
             val statusBarHeight = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top.toFloat()
             binding.buildView.setStatusBarHeight(statusBarHeight)
             binding.flightView.setStatusBarHeight(statusBarHeight)
-            // Remove setUserId here; set it after initializeGame
             val width = binding.flightView.width.toFloat()
             val height = binding.flightView.height.toFloat()
             if (width > 0f && height > 0f) {
@@ -236,7 +235,7 @@ class MainActivity : AppCompatActivity() {
                 Timber.d("onResume: Paused state after reloading: ${gameStateManager.getPausedState()}, shouldLoadPausedState=${gameStateManager.shouldLoadPausedState()}")
                 if (gameStateManager.gameState == GameState.GAME_OVER) {
                     Timber.d("onResume: Skipping paused state load due to GAME_OVER")
-                    return@let
+                        return@let
                 }
                 if (gameStateManager.shouldLoadPausedState() && gameStateManager.getPausedState() != null && gameStateManager.gameState == GameState.BUILD) {
                     gameStateManager.restoreGameState(gameEngine, gameStateManager.getPausedState()!!)
@@ -245,6 +244,7 @@ class MainActivity : AppCompatActivity() {
                     Timber.d("onResume: Not applying paused state in BUILD mode as shouldLoadPausedState is false")
                 }
             }
+            setupWeaponSpinner() // Update weapon spinner on resume to reflect any purchases
         }
     }
 
@@ -294,7 +294,8 @@ class MainActivity : AppCompatActivity() {
                     Timber.d("Engine image visibility: ${binding.engineImage.isVisible}, width: ${binding.engineImage.width}, height: ${binding.engineImage.height}")
                     setupListeners()
                     setupShipSpinner()
-                    binding.flightView.setUserId(userId!!) // Set userId here after it's initialized
+                    setupWeaponSpinner()
+                    binding.flightView.setUserId(userId!!)
                     binding.buildView.setInitialized()
                 }
 
@@ -309,6 +310,8 @@ class MainActivity : AppCompatActivity() {
                     binding.pauseButton.isVisible = isLaunching
                     binding.destroyAllButton.isVisible = isLaunching && gameEngine.destroyAllCharges > 0
                     binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
+                    binding.shipSpinner.isVisible = !isLaunching
+                    binding.weaponSpinner.isVisible = !isLaunching // Show weapon spinner only in build mode
                     if (isLaunching) {
                         binding.flightView.requestFocus()
                         binding.flightView.setGameMode(GameState.FLIGHT)
@@ -320,6 +323,7 @@ class MainActivity : AppCompatActivity() {
                         binding.buildView.renderer.setShipSet(gameEngine.selectedShipSet)
                         Timber.d("BuildView focused: ${binding.buildView.isFocused}")
                         setupShipSpinner()
+                        setupWeaponSpinner()
                         binding.buildView.invalidate()
                     }
                     val isLaunchReady = gameEngine.isShipSpaceworthy(gameEngine.screenHeight) && buildModeManager.parts.size == 3 && !isLaunching
@@ -432,6 +436,35 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.shipSpinner.isEnabled = gameStateManager.gameState == GameState.BUILD
+    }
+
+    private fun setupWeaponSpinner() {
+        val unlockedWeapons = gameEngine.unlockedWeapons.toList()
+        val weaponNames = unlockedWeapons.map {
+            when (it) {
+                is WeaponType.Default -> "Default"
+                is WeaponType.Plasma -> "Plasma"
+                is WeaponType.Missile -> "Missile"
+                is WeaponType.Laser -> "Laser"
+            }
+        }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, weaponNames)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.weaponSpinner.adapter = adapter
+        val selectedIndex = unlockedWeapons.indexOf(gameEngine.selectedWeapon)
+        binding.weaponSpinner.setSelection(if (selectedIndex >= 0) selectedIndex else 0)
+
+        binding.weaponSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
+                gameEngine.selectedWeapon = unlockedWeapons[position]
+                Timber.d("Selected weapon: ${weaponNames[position]}")
+                gameEngine.savePersistentData(userId ?: "default_user") // Save to Firebase
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>) {}
+        }
+
+        binding.weaponSpinner.isEnabled = gameStateManager.gameState == GameState.BUILD
     }
 
     private fun showContinueDialog(

@@ -49,8 +49,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideGameObjectRenderer(bitmapManager: BitmapManager): GameObjectRenderer {
-        return GameObjectRenderer(bitmapManager)
+    fun provideGameObjectRenderer(@ApplicationContext context: Context): GameObjectRenderer {
+        return GameObjectRenderer(context)
     }
 
     @Provides
@@ -135,7 +135,7 @@ object AppModule {
         gameStateManager: GameStateManager,
         aiAssistant: AIAssistant,
         gameEngine: Lazy<GameEngine>,
-        @ApplicationContext context: Context // Add context parameter
+        @ApplicationContext context: Context
     ): FlightModeManager = FlightModeManager(
         shipManager,
         gameObjectManager,
@@ -145,7 +145,7 @@ object AppModule {
         gameStateManager,
         aiAssistant,
         gameEngine,
-        context // Pass context to constructor
+        context
     )
 
     @Provides

@@ -1,10 +1,11 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.compose") // Note: This might be incorrect; should be "kotlin-android" if not using Compose plugin explicitly
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.0" // Added for kotlinx.serialization
 }
 
 android {
@@ -55,7 +56,7 @@ android {
 }
 
 dependencies {
-    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4") // Use the latest version
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4") // Use the latest version
     implementation("com.google.android.gms:play-services-auth:20.7.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
@@ -82,6 +83,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-firestore-ktx:24.10.0")
     implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0") // Added for serialization
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

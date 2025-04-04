@@ -41,22 +41,26 @@ class BitmapManager @Inject constructor(
         )
 
         // Load other bitmaps
-        bitmaps[R.drawable.power_up] = loadBitmap(R.drawable.power_up, "Power-up")
+        bitmaps[R.drawable.power_up_icon] = loadBitmap(R.drawable.power_up_icon, "Power-up")
         bitmaps[R.drawable.shield_icon] = loadBitmap(R.drawable.shield_icon, "Shield")
         bitmaps[R.drawable.speed_icon] = loadBitmap(R.drawable.speed_icon, "Speed")
         bitmaps[R.drawable.stealth_icon] = loadBitmap(R.drawable.stealth_icon, "Stealth")
         bitmaps[R.drawable.warp_icon] = loadBitmap(R.drawable.warp_icon, "Warp")
-        bitmaps[R.drawable.star] = loadBitmap(R.drawable.star, "Star")
+        bitmaps[R.drawable.star_icon] = loadBitmap(R.drawable.star_icon, "Star")
         bitmaps[R.drawable.asteroid] = loadBitmap(R.drawable.asteroid, "Asteroid")
         bitmaps[R.drawable.invincibility_icon] = loadBitmap(R.drawable.invincibility_icon, "Invincibility")
         bitmaps[R.drawable.enemy_ship] = loadBitmap(R.drawable.enemy_ship, "Enemy ship")
         bitmaps[R.drawable.boss_projectile] = loadBitmap(R.drawable.boss_projectile, "Boss projectile")
         bitmaps[R.drawable.homing_missile] = loadBitmap(R.drawable.homing_missile, "Homing missile")
 
-        // Load boss ship bitmaps
+        // Load all boss ship bitmaps
+        bitmaps[R.drawable.boss_ship] = loadBitmap(R.drawable.boss_ship, "Boss ship (default)")
         bitmaps[R.drawable.boss_ship_1] = loadBitmap(R.drawable.boss_ship_1, "Boss ship 1")
         bitmaps[R.drawable.boss_ship_2] = loadBitmap(R.drawable.boss_ship_2, "Boss ship 2")
         bitmaps[R.drawable.boss_ship_3] = loadBitmap(R.drawable.boss_ship_3, "Boss ship 3")
+        bitmaps[R.drawable.boss_ship_4] = loadBitmap(R.drawable.boss_ship_4, "Boss ship 4")
+        bitmaps[R.drawable.boss_ship_5] = loadBitmap(R.drawable.boss_ship_5, "Boss ship 5")
+        bitmaps[R.drawable.boss_ship_6] = loadBitmap(R.drawable.boss_ship_6, "Boss ship 6")
     }
 
     data class ShipSet(val cockpit: Bitmap, val fuelTank: Bitmap, val engine: Bitmap)
@@ -77,6 +81,19 @@ class BitmapManager @Inject constructor(
 
     fun getShipSet(index: Int): ShipSet {
         return shipSets.getOrNull(index) ?: shipSets[0]
+    }
+
+    fun getBossShipBitmap(tier: Int): Bitmap {
+        val resourceId = when (tier) {
+            1 -> R.drawable.boss_ship_1
+            2 -> R.drawable.boss_ship_2
+            3 -> R.drawable.boss_ship_3
+            4 -> R.drawable.boss_ship_4
+            5 -> R.drawable.boss_ship_5
+            6 -> R.drawable.boss_ship_6
+            else -> R.drawable.boss_ship // Default for tier 0 or invalid tiers
+        }
+        return getBitmap(resourceId, "Boss ship tier $tier")
     }
 
     fun createPlaceholderBitmap(original: Bitmap): Bitmap {
