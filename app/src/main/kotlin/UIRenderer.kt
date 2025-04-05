@@ -81,7 +81,7 @@ class UIRenderer @Inject constructor() {
         strokeCap = Paint.Cap.ROUND
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
-    private val aiMessagePaint = TextPaint().apply {
+    internal val aiMessagePaint = TextPaint().apply {
         isAntiAlias = true
         textSize = 40f
         color = Color.CYAN
@@ -129,10 +129,6 @@ class UIRenderer @Inject constructor() {
             val distanceBounds = Rect()
             val scoreBounds = Rect()
             val levelBounds = Rect()
-
-            distancePaint.getTextBounds(distanceText, 0, distanceText.length, distanceBounds)
-            scorePaint.getTextBounds(scoreText, 0, scoreText.length, scoreBounds)
-            graffitiPaint.getTextBounds(levelText, 0, levelText.length, levelBounds)
 
             val totalWidth = maxOf(distanceBounds.width(), scoreBounds.width(), levelBounds.width())
             val startX = (screenWidth - totalWidth) / 2f

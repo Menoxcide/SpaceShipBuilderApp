@@ -42,7 +42,7 @@ class FlightModeManager @Inject constructor(
     var distanceTraveled = 0f
     var longestDistanceTraveled = 0f
     private var sessionDistanceTraveled = 0f
-    private val distancePerLevel = 100f
+    private val distancePerLevel: Float = DISTANCE_PER_LEVEL // Expose as property
     var levelUpAnimationStartTime = 0L
 
     private var lastScoreUpdateTime = System.currentTimeMillis()
@@ -75,6 +75,7 @@ class FlightModeManager @Inject constructor(
         const val BOSS_SHOT_INTERVAL = 2000L
         const val BOSS_MOVEMENT_INTERVAL = 1000L
         const val BOSS_COLLISION_DAMAGE_PER_SECOND = 50f
+        const val DISTANCE_PER_LEVEL = 100f // Renamed for clarity
     }
 
     fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float) {
@@ -135,7 +136,6 @@ class FlightModeManager @Inject constructor(
                     onLevelChange(shipManager.level)
                     levelUpAnimationStartTime = currentTime
                     audioManager.playLevelUpSound()
-                    // Add celebration particles across the screen
                     repeat(5) {
                         val x = Random.nextFloat() * shipManager.screenWidth
                         val y = Random.nextFloat() * shipManager.screenHeight
@@ -168,7 +168,6 @@ class FlightModeManager @Inject constructor(
                     onLevelChange(shipManager.level)
                     levelUpAnimationStartTime = currentTime
                     audioManager.playLevelUpSound()
-                    // Add celebration particles across the screen
                     repeat(5) {
                         val x = Random.nextFloat() * shipManager.screenWidth
                         val y = Random.nextFloat() * shipManager.screenHeight
@@ -578,4 +577,6 @@ class FlightModeManager @Inject constructor(
     fun setContinuesUsed(value: Int) {
         continuesUsed = value
     }
+
+    fun getDistancePerLevel(): Float = distancePerLevel
 }

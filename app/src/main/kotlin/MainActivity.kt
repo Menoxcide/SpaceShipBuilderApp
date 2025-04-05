@@ -307,9 +307,7 @@ class MainActivity : AppCompatActivity() {
                     binding.flightView.isEnabled = isLaunching
                     binding.playerNameInput.isVisible = false
                     binding.navigationButtons.isVisible = !isLaunching
-                    binding.pauseButton.isVisible = isLaunching
-                    binding.destroyAllButton.isVisible = isLaunching && gameEngine.destroyAllCharges > 0
-                    binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
+                    // Removed references to pauseButton and destroyAllButton (lines 310-312)
                     binding.shipSpinner.isVisible = !isLaunching
                     binding.weaponSpinner.isVisible = !isLaunching // Show weapon spinner only in build mode
                     if (isLaunching) {
@@ -601,27 +599,8 @@ class MainActivity : AppCompatActivity() {
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
 
-        binding.pauseButton.setOnClickListener {
-            Timber.d("Pause button clicked, returning to build mode")
-            gameStateManager.setGameState(
-                GameState.BUILD,
-                gameEngine.screenWidth,
-                gameEngine.screenHeight,
-                gameEngine.flightModeManager::resetFlightData,
-                gameEngine::savePersistentData,
-                userId ?: "default_user",
-                gameEngine
-            )
-        }
-
-        binding.destroyAllButton.setOnClickListener {
-            Timber.d("Destroy All button clicked")
-            if (gameEngine.destroyAll()) {
-                binding.destroyAllButton.text = "DESTROY ALL (${gameEngine.destroyAllCharges}/3)"
-                binding.destroyAllButton.isEnabled = gameEngine.destroyAllCharges > 0
-                binding.destroyAllButton.isVisible = gameEngine.destroyAllCharges > 0
-            }
-        }
+        // Removed click listeners for pauseButton and destroyAllButton (lines 604, 617-622)
+        // These are now handled by FlightView's onTouchEvent
 
         partButtons.forEach { (button, _) ->
             button.setOnTouchListener(partTouchListener)
@@ -655,16 +634,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (gameStateManager.gameState == GameState.FLIGHT) {
-            Timber.d("Back pressed in flight mode, returning to build without saving score")
-            gameStateManager.setGameState(
-                GameState.BUILD,
-                gameEngine.screenWidth,
-                gameEngine.screenHeight,
-                gameEngine.flightModeManager::resetFlightData,
-                gameEngine::savePersistentData,
-                userId,
-                gameEngine
-            )
+            Timber.d("Back pressed in flight mode, triggering pause")
+            binding.flightView.triggerPause()
         } else {
             super.onBackPressed()
         }

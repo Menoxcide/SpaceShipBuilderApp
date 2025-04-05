@@ -8,7 +8,7 @@ import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
 
-enum class GameState { BUILD, FLIGHT, GAME_OVER }
+enum class GameState { BUILD, FLIGHT, GAME_OVER } // Removed PAUSED state
 
 class GameStateManager @Inject constructor() {
     var gameState: GameState = GameState.BUILD

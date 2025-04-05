@@ -125,40 +125,6 @@
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
-
-        <!-- Pause Button: Fixed 64x64dp with increased right margin -->
-        <Button
-            android:id="@+id/pauseButton"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:layout_gravity="top|end"
-            android:layout_margin="16dp"
-            android:layout_marginEnd="32dp"
-            android:background="@android:color/transparent"
-            android:drawableStart="@drawable/pause_icon"
-            android:contentDescription="Pause"
-            android:paddingStart="8dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp"
-            android:visibility="gone"
-            android:elevation="10dp" />
-
-        <!-- Destroy All Button: 64x64dp, scaled programmatically, matching right margin -->
-        <Button
-            android:id="@+id/destroyAllButton"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:layout_below="@id/pauseButton"
-            android:layout_alignParentEnd="true"
-            android:layout_marginTop="8dp"
-            android:layout_marginEnd="32dp"
-            android:background="@android:color/transparent"
-            android:drawableStart="@drawable/destroy_all"
-            android:contentDescription="Destroy All"
-            android:padding="8dp"
-            android:visibility="gone"
-            android:elevation="10dp" />
     </FrameLayout>
 
     <EditText

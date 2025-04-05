@@ -10,7 +10,7 @@ class Renderer @Inject constructor(
     private val backgroundRenderer: BackgroundRenderer,
     private val shipRenderer: ShipRenderer,
     private val gameObjectRenderer: GameObjectRenderer,
-    private val uiRenderer: UIRenderer
+    internal val uiRenderer: UIRenderer
 ) {
     private var currentShipSet: Int = 0
 
