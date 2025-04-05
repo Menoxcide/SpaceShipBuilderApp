@@ -12,7 +12,7 @@ class Renderer @Inject constructor(
     private val gameObjectRenderer: GameObjectRenderer,
     private val uiRenderer: UIRenderer
 ) {
-    private var currentShipSet: Int = 0 // Track current ship set
+    private var currentShipSet: Int = 0
 
     val cockpitBitmap: Bitmap get() = bitmapManager.getShipSet(currentShipSet).cockpit
     val fuelTankBitmap: Bitmap get() = bitmapManager.getShipSet(currentShipSet).fuelTank
@@ -22,17 +22,16 @@ class Renderer @Inject constructor(
     val fuelTankPlaceholderBitmap: Bitmap get() = bitmapManager.createPlaceholderBitmap(fuelTankBitmap)
     val enginePlaceholderBitmap: Bitmap get() = bitmapManager.createPlaceholderBitmap(engineBitmap)
 
-    // Provide access to shipRenderer for classes that need to interact with ParticleSystem
     val shipRendererInstance: ShipRenderer get() = shipRenderer
 
     fun setShipSet(shipSet: Int) {
         currentShipSet = shipSet
         Timber.d("Renderer ship set updated to: $shipSet")
-        // No need to reload bitmaps here; they are fetched dynamically via getters
     }
 
     fun updateAnimationFrame() {
         backgroundRenderer.updateAnimationFrame()
+        gameObjectRenderer.updateGlowAnimation() // Add this to update glow effect
         uiRenderer.updateAnimationTime()
     }
 

@@ -297,6 +297,11 @@ class GameEngine @Inject constructor(
         set(value) {
             flightModeManager.shipManager.missileCount = value
         }
+    var maxMissiles: Int
+        get() = flightModeManager.shipManager.maxMissiles
+        set(value) {
+            flightModeManager.shipManager.maxMissiles = value
+        }
 
     var hp: Float
         get() = flightModeManager.shipManager.hp

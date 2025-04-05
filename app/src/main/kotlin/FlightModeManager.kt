@@ -47,11 +47,10 @@ class FlightModeManager @Inject constructor(
 
     private var lastScoreUpdateTime = System.currentTimeMillis()
     private var lastDistanceUpdateTime = System.currentTimeMillis()
-    private var lastBossCollisionDamageTime = 0L // Track last damage application time
+    private var lastBossCollisionDamageTime = 0L
 
     private var userId: String = "default_user"
 
-    // Environment enum
     enum class Environment {
         NORMAL,
         ASTEROID_FIELD,
@@ -62,7 +61,7 @@ class FlightModeManager @Inject constructor(
         private set
 
     private var lastEnvironmentChangeTime = System.currentTimeMillis()
-    private val environmentChangeInterval = 30000L // 30 seconds
+    private val environmentChangeInterval = 30000L
 
     companion object {
         const val LEVEL_UP_ANIMATION_DURATION = 5000L
@@ -75,7 +74,7 @@ class FlightModeManager @Inject constructor(
         const val ASTEROID_DESTROY_POINTS = 20
         const val BOSS_SHOT_INTERVAL = 2000L
         const val BOSS_MOVEMENT_INTERVAL = 1000L
-        const val BOSS_COLLISION_DAMAGE_PER_SECOND = 50f // Damage per second
+        const val BOSS_COLLISION_DAMAGE_PER_SECOND = 50f
     }
 
     fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float) {
@@ -109,6 +108,7 @@ class FlightModeManager @Inject constructor(
             if (currentTime - lastEnvironmentChangeTime >= environmentChangeInterval) {
                 currentEnvironment = Environment.values().random()
                 lastEnvironmentChangeTime = currentTime
+                audioManager.playEnvironmentChangeSound()
                 Timber.d("Environment changed to $currentEnvironment")
             }
 
@@ -134,6 +134,13 @@ class FlightModeManager @Inject constructor(
                     shipManager.level++
                     onLevelChange(shipManager.level)
                     levelUpAnimationStartTime = currentTime
+                    audioManager.playLevelUpSound()
+                    // Add celebration particles across the screen
+                    repeat(5) {
+                        val x = Random.nextFloat() * shipManager.screenWidth
+                        val y = Random.nextFloat() * shipManager.screenHeight
+                        gameObjectManager.renderer.shipRendererInstance.addCollectionParticles(x, y)
+                    }
                     onBossDefeatedChange()
                     if (shipManager.level > shipManager.highestLevel) {
                         shipManager.highestLevel = shipManager.level
@@ -149,7 +156,7 @@ class FlightModeManager @Inject constructor(
                 }
             )
 
-            if (currentTime -lastDistanceUpdateTime >= 1000 && gameObjectManager.getBoss() == null) {
+            if (currentTime - lastDistanceUpdateTime >= 1000 && gameObjectManager.getBoss() == null) {
                 sessionDistanceTraveled += shipManager.currentSpeed
                 distanceTraveled += shipManager.currentSpeed
                 onDistanceTraveledChange(distanceTraveled)
@@ -160,6 +167,13 @@ class FlightModeManager @Inject constructor(
                     shipManager.level++
                     onLevelChange(shipManager.level)
                     levelUpAnimationStartTime = currentTime
+                    audioManager.playLevelUpSound()
+                    // Add celebration particles across the screen
+                    repeat(5) {
+                        val x = Random.nextFloat() * shipManager.screenWidth
+                        val y = Random.nextFloat() * shipManager.screenHeight
+                        gameObjectManager.renderer.shipRendererInstance.addCollectionParticles(x, y)
+                    }
                     if (shipManager.level > shipManager.highestLevel) {
                         shipManager.highestLevel = shipManager.level
                         onHighestLevelChange(shipManager.highestLevel)
@@ -232,11 +246,10 @@ class FlightModeManager @Inject constructor(
                     shipManager.hp -= 10f
                 },
                 onEnemyShipHit = { enemy ->
-                    // Check if this is a boss collision (dummy enemy with shotInterval = 0L)
                     if (enemy.shotInterval == 0L && gameObjectManager.getBoss() != null) {
                         // Damage handled below per second
                     } else {
-                        shipManager.hp -= enemy.damage // Use enemy-specific damage
+                        shipManager.hp -= enemy.damage
                     }
                 }
             )
@@ -246,20 +259,17 @@ class FlightModeManager @Inject constructor(
                 glowStartTime = newGlowStartTime
             }
 
-            // Handle continuous boss collision damage (50 HP per second)
             if (isCollidingWithBoss) {
-                val timeSinceLastDamage = (currentTime - lastBossCollisionDamageTime).toFloat() / 1000f // Convert to seconds
+                val timeSinceLastDamage = (currentTime - lastBossCollisionDamageTime).toFloat() / 1000f
                 val damageToApply = BOSS_COLLISION_DAMAGE_PER_SECOND * timeSinceLastDamage
                 shipManager.hp -= damageToApply
                 Timber.d("Boss collision damage applied: $damageToApply HP, new HP: ${shipManager.hp}")
 
-                // Update damage text every second
                 if (timeSinceLastDamage >= 1f) {
                     gameObjectManager.renderer.shipRendererInstance.addDamageTextParticle(shipManager.shipX, shipManager.shipY, 50)
                     lastBossCollisionDamageTime = currentTime
                 }
             } else {
-                // Reset damage timer when not colliding
                 lastBossCollisionDamageTime = currentTime
             }
 
@@ -424,8 +434,8 @@ class FlightModeManager @Inject constructor(
         glowStartTime = 0L
         continuesUsed = 0
         adContinuesUsed = 0
-        lastBossCollisionDamageTime = 0L // Reset boss collision damage timer
-        currentEnvironment = Environment.NORMAL // Reset environment
+        lastBossCollisionDamageTime = 0L
+        currentEnvironment = Environment.NORMAL
         lastEnvironmentChangeTime = System.currentTimeMillis()
         Timber.d("Flight data reset")
     }
@@ -487,6 +497,7 @@ class FlightModeManager @Inject constructor(
             )
         }
         gameObjectManager.projectiles.add(projectile)
+        audioManager.playShootSound()
         Timber.d("Spawned projectile of type ${projectile.javaClass.simpleName} at ($projectileX, $projectileY) with weaponType ${projectile.weaponType}")
     }
 

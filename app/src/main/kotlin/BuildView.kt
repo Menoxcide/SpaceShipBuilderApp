@@ -2,13 +2,18 @@ package com.example.spaceshipbuilderapp
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import androidx.core.view.isVisible
 import timber.log.Timber
 import javax.inject.Inject
 import dagger.hilt.android.AndroidEntryPoint
+import kotlin.math.hypot
 
 @AndroidEntryPoint
 class BuildView @Inject constructor(
@@ -30,8 +35,52 @@ class BuildView @Inject constructor(
     private var lastParticleTriggerTime = 0L
     private var isLaunchButtonVisible = false
     private var isSpaceworthy = false
-    private var shouldRedraw = false // Flag to control redraws
-    private var isInitialized = false // New flag to delay drawing until ready
+    private var shouldRedraw = false
+    private var isInitialized = false
+
+    private val glowPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        color = Color.argb(255, 0, 255, 255)
+    }
+
+    private val rotationIndicatorPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        color = Color.argb(200, 255, 255, 0) // Yellow rotation indicator
+    }
+    private var rotationIndicatorTime: Long = 0L
+    private var rotationIndicatorDuration: Long = 500L // Show for 0.5 seconds
+    private var rotatedPart: Part? = null
+
+    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            val touchX = e.rawX
+            val touchY = e.rawY
+            val part = buildModeManager.parts.find { part ->
+                val scaledWidth = part.bitmap.width * part.scale
+                val scaledHeight = part.bitmap.height * part.scale
+                val partRect = RectF(
+                    part.x - scaledWidth / 2f,
+                    part.y - scaledHeight / 2f,
+                    part.x + scaledWidth / 2f,
+                    part.y + scaledHeight / 2f
+                )
+                partRect.contains(touchX, touchY)
+            }
+            if (part != null) {
+                buildModeManager.rotatePart(part.type)
+                rotationIndicatorTime = System.currentTimeMillis()
+                rotatedPart = part
+                invalidate()
+                Timber.d("Double-tapped part ${part.type}, rotated to ${part.rotation} degrees")
+                return true
+            }
+            return false
+        }
+    })
 
     init {
         if (BuildConfig.DEBUG) Timber.d("BuildView initialized")
@@ -67,7 +116,6 @@ class BuildView @Inject constructor(
         return success
     }
 
-    // New method to signal initialization completion
     fun setInitialized() {
         isInitialized = true
         invalidate()
@@ -83,9 +131,31 @@ class BuildView @Inject constructor(
         super.onDraw(canvas)
         Timber.d("onDraw called, visibility=$isVisible, gameState=${gameStateManager.gameState}")
 
-        // Draw background (including stars) first, passing the current environment
         renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level, gameEngine.currentEnvironment)
+
+        // Draw placeholders with glow effect if a part is near
+        buildModeManager.placeholders.forEach { placeholder ->
+            val selectedPart = buildModeManager.selectedPart
+            if (selectedPart != null && selectedPart.type == placeholder.type) {
+                val distance = hypot(selectedPart.x - placeholder.x, selectedPart.y - placeholder.y)
+                if (distance < InputHandler.SNAP_RANGE && !inputHandler.checkOverlap(placeholder.x, placeholder.y, selectedPart)) {
+                    val glowAlpha = (255 * (1 - distance / InputHandler.SNAP_RANGE)).toInt().coerceIn(0, 255)
+                    glowPaint.alpha = glowAlpha
+                    val bitmap = placeholder.bitmap
+                    val scaledWidth = bitmap.width * placeholder.scale
+                    val scaledHeight = bitmap.height * placeholder.scale
+                    val rect = RectF(
+                        placeholder.x - scaledWidth / 2f - 5f,
+                        placeholder.y - scaledHeight / 2f - 5f,
+                        placeholder.x + scaledWidth / 2f + 5f,
+                        placeholder.y + scaledHeight / 2f + 5f
+                    )
+                    canvas.drawRect(rect, glowPaint)
+                }
+            }
+        }
         renderer.drawPlaceholders(canvas, buildModeManager.placeholders)
+
         renderer.drawParts(canvas, buildModeManager.parts)
         buildModeManager.selectedPart?.let { renderer.drawParts(canvas, listOf(it)) }
         renderer.drawShip(
@@ -100,6 +170,24 @@ class BuildView @Inject constructor(
             gameEngine.mergedShipBitmap,
             buildModeManager.placeholders
         )
+
+        // Draw rotation indicator if a part was recently rotated
+        val currentTime = System.currentTimeMillis()
+        if (rotatedPart != null && currentTime - rotationIndicatorTime <= rotationIndicatorDuration) {
+            val part = rotatedPart!!
+            val scaledWidth = part.bitmap.width * part.scale
+            val scaledHeight = part.bitmap.height * part.scale
+            val radius = (scaledWidth + scaledHeight) / 4f // Approximate radius around the part
+            val rect = RectF(
+                part.x - radius,
+                part.y - radius,
+                part.x + radius,
+                part.y + radius
+            )
+            canvas.drawArc(rect, 0f, 360f, false, rotationIndicatorPaint)
+        } else {
+            rotatedPart = null
+        }
 
         val currentSpaceworthy = buildModeManager.parts.size == 3 && gameEngine.isShipSpaceworthy(screenHeight)
         if (currentSpaceworthy && !isSpaceworthy) {
@@ -132,13 +220,12 @@ class BuildView @Inject constructor(
             Timber.d("Forced launch button visibility update to $isLaunchReady in BuildView")
         }
 
-        // Log the paused state before rendering stats
         val pausedState = gameStateManager.getPausedState()
         Timber.d("BuildView onDraw: Paused state = $pausedState")
         renderer.drawStats(canvas, gameEngine, statusBarHeight, gameStateManager.gameState)
 
         Timber.d("Rendered frame in BuildView with parts count: ${buildModeManager.parts.size}, parts: ${buildModeManager.parts.map { "${it.type} at y=${it.y}" }}")
-        shouldRedraw = false // Reset the redraw flag after drawing
+        shouldRedraw = false
     }
 
     override fun invalidate() {
@@ -151,12 +238,15 @@ class BuildView @Inject constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (gameStateManager.gameState != GameState.BUILD || !isVisible) return false
 
+        // Handle double-tap for rotation
+        gestureDetector.onTouchEvent(event)
+
         val handled = inputHandler.onTouchEvent(event)
         if (handled) {
             invalidate()
             if (BuildConfig.DEBUG) Timber.d("Touch event handled by InputHandler, invalidating view")
         }
-        return handled
+        return handled || true // Ensure we consume the event for double-tap detection
     }
 
     override fun performClick(): Boolean {

@@ -51,7 +51,7 @@ class AudioManager @Inject constructor(
             mediaPlayer?.start()
             mediaPlayer?.setOnCompletionListener { it.release() }
         } catch (e: Exception) {
-            Timber.e(e, "Failed to play boss shoot sound")
+            Timber.e(e, "Failed to play dialog open sound")
         }
     }
 
@@ -63,6 +63,39 @@ class AudioManager @Inject constructor(
             mediaPlayer?.setOnCompletionListener { it.release() }
         } catch (e: Exception) {
             Timber.e(e, "Failed to play missile launch sound")
+        }
+    }
+
+    fun playShootSound() {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(context, R.raw.shoot)
+            mediaPlayer?.start()
+            mediaPlayer?.setOnCompletionListener { it.release() }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to play shoot sound")
+        }
+    }
+
+    fun playLevelUpSound() {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(context, R.raw.level_up)
+            mediaPlayer?.start()
+            mediaPlayer?.setOnCompletionListener { it.release() }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to play level up sound")
+        }
+    }
+
+    fun playEnvironmentChangeSound() {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer.create(context, R.raw.environment_change)
+            mediaPlayer?.start()
+            mediaPlayer?.setOnCompletionListener { it.release() }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to play environment change sound")
         }
     }
 

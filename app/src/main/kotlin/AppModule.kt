@@ -34,8 +34,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideBackgroundRenderer(): BackgroundRenderer {
-        return BackgroundRenderer()
+    fun provideBackgroundRenderer(@ApplicationContext context: Context): BackgroundRenderer {
+        return BackgroundRenderer(context)
     }
 
     @Provides
@@ -49,8 +49,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideGameObjectRenderer(@ApplicationContext context: Context): GameObjectRenderer {
-        return GameObjectRenderer(context)
+    fun provideGameObjectRenderer(
+        @ApplicationContext context: Context,
+        particleSystem: ParticleSystem // Add ParticleSystem dependency
+    ): GameObjectRenderer {
+        return GameObjectRenderer(context, particleSystem)
     }
 
     @Provides

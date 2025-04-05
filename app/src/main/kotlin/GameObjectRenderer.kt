@@ -5,18 +5,23 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.RadialGradient
 import android.graphics.Paint
-import android.graphics.PorterDuff
 import android.graphics.RectF
+import android.graphics.Shader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
+import kotlin.math.sin
 
-class GameObjectRenderer @Inject constructor(@ApplicationContext private val context: Context) {
+class GameObjectRenderer @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val particleSystem: ParticleSystem // Inject ParticleSystem
+) {
     private lateinit var powerUpBitmaps: Map<String, Bitmap?>
     private var enemyShipBitmap: Bitmap? = null
-    private var droneEnemyBitmap: Bitmap? = null // New bitmap for drones
-    private var armoredEnemyBitmap: Bitmap? = null // New bitmap for armored enemies
+    private var droneEnemyBitmap: Bitmap? = null
+    private var armoredEnemyBitmap: Bitmap? = null
     private val projectileBitmaps: MutableMap<WeaponType, Bitmap?> = mutableMapOf()
     private val enemyProjectilePaint = Paint().apply {
         color = Color.RED
@@ -32,7 +37,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         isAntiAlias = true
     }
     private val hpBarFillPaint = Paint().apply {
-        color = Color.GREEN // Initial color, will be adjusted dynamically
+        color = Color.GREEN
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -42,20 +47,26 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         strokeWidth = 2f
         isAntiAlias = true
     }
+    private val glowPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+    }
+    private var glowPhase: Float = 0f
 
-    private val bitmapManager: BitmapManager = BitmapManager(context) // Local instance for bitmaps
+    private val bitmapManager: BitmapManager = BitmapManager(context)
 
     companion object {
-        const val ENEMY_SHIP_SCALE = 0.5f // Scaling factor for enemy ships
-        const val DRONE_ENEMY_SCALE = 0.3f // Smaller scale for drones
-        const val ARMORED_ENEMY_SCALE = 0.7f // Larger scale for armored enemies
-        const val BOSS_TARGET_WIDTH = 150f // Target width in pixels for all boss ships
-        const val HP_BAR_WIDTH = 100f // Fixed width of the HP bar
-        const val HP_BAR_HEIGHT = 10f // Fixed height of the HP bar
-        const val HP_BAR_OFFSET = 20f // Distance above the boss ship
-        const val ASTEROID_MIN_SCALE = 0.5f // Minimum scale when asteroid is at top
-        const val ASTEROID_MAX_SCALE = 1.5f // Maximum scale when asteroid is at bottom
-        const val PROJECTILE_SIZE = 10f // Size for scaling projectile bitmaps
+        const val ENEMY_SHIP_SCALE = 0.5f
+        const val DRONE_ENEMY_SCALE = 0.3f
+        const val ARMORED_ENEMY_SCALE = 0.7f
+        const val BOSS_TARGET_WIDTH = 150f
+        const val HP_BAR_WIDTH = 100f
+        const val HP_BAR_HEIGHT = 10f
+        const val HP_BAR_OFFSET = 20f
+        const val ASTEROID_MIN_SCALE = 0.5f
+        const val ASTEROID_MAX_SCALE = 1.5f
+        const val PROJECTILE_SIZE = 10f
+        const val GLOW_RADIUS = 50f
     }
 
     init {
@@ -69,11 +80,9 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
             "invincibility" to BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
         )
         enemyShipBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_ship)
-        // Initialize new bitmaps for drone and armored enemies
         droneEnemyBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.drone_enemy) ?: enemyShipBitmap
         armoredEnemyBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.armored_enemy) ?: enemyShipBitmap
 
-        // Load projectile bitmaps for each weapon type
         projectileBitmaps[WeaponType.Default] = BitmapFactory.decodeResource(context.resources, WeaponType.Default.projectileDrawableId)
         projectileBitmaps[WeaponType.Plasma] = BitmapFactory.decodeResource(context.resources, WeaponType.Plasma.projectileDrawableId)
         projectileBitmaps[WeaponType.Missile] = BitmapFactory.decodeResource(context.resources, WeaponType.Missile.projectileDrawableId)
@@ -81,10 +90,36 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         projectileBitmaps[WeaponType.Laser] = BitmapFactory.decodeResource(context.resources, WeaponType.Laser.projectileDrawableId)
     }
 
+    fun updateGlowAnimation() {
+        glowPhase = (glowPhase + 0.05f) % (2 * Math.PI.toFloat())
+    }
+
     fun drawPowerUps(canvas: Canvas, powerUps: List<PowerUp>, statusBarHeight: Float) {
         powerUps.forEach { powerUp ->
             val bitmap = powerUpBitmaps[powerUp.type]
             if (bitmap != null && !bitmap.isRecycled) {
+                // Draw glow effect
+                val glowColor = when (powerUp.type) {
+                    "power_up" -> Color.YELLOW
+                    "shield" -> Color.BLUE
+                    "speed" -> Color.RED
+                    "stealth" -> Color.GRAY
+                    "warp" -> Color.MAGENTA
+                    "star" -> Color.WHITE
+                    "invincibility" -> Color.GREEN
+                    else -> Color.YELLOW
+                }
+                val glowAlpha = (sin(glowPhase) * 127 + 128).toInt()
+                glowPaint.shader = RadialGradient(
+                    powerUp.x, powerUp.y + statusBarHeight,
+                    GLOW_RADIUS,
+                    Color.argb(glowAlpha, Color.red(glowColor), Color.green(glowColor), Color.blue(glowColor)),
+                    Color.TRANSPARENT,
+                    Shader.TileMode.CLAMP
+                )
+                canvas.drawCircle(powerUp.x, powerUp.y + statusBarHeight, GLOW_RADIUS, glowPaint)
+
+                // Draw the power-up bitmap
                 canvas.drawBitmap(bitmap, powerUp.x - bitmap.width / 2f, powerUp.y - bitmap.height / 2f + statusBarHeight, null)
             } else {
                 Timber.w("Bitmap for power-up ${powerUp.type} is null or recycled")
@@ -96,8 +131,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         asteroids.forEach { asteroid ->
             val bitmap = bitmapManager.getAsteroidBitmap(asteroid.spriteId)
             if (bitmap != null && !bitmap.isRecycled) {
-                // Calculate dynamic scale based on y-position (top = smaller, bottom = larger)
-                val yPositionFactor = (asteroid.y + statusBarHeight + bitmap.height) / (canvas.height.toFloat() + bitmap.height) // Normalize y from 0 (top) to 1 (bottom)
+                val yPositionFactor = (asteroid.y + statusBarHeight + bitmap.height) / (canvas.height.toFloat() + bitmap.height)
                 val dynamicScale = ASTEROID_MIN_SCALE + (ASTEROID_MAX_SCALE - ASTEROID_MIN_SCALE) * yPositionFactor.coerceIn(0f, 1f)
                 val scaledWidth = bitmap.width * asteroid.size / bitmap.width * dynamicScale
                 val scaledHeight = bitmap.height * asteroid.size / bitmap.height * dynamicScale
@@ -120,7 +154,6 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         projectiles.forEach { projectile ->
             val bitmap = projectileBitmaps[projectile.weaponType]
             if (bitmap != null && !bitmap.isRecycled) {
-                // Scale the bitmap to a reasonable size for projectiles
                 val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
                 val scaledWidth = bitmap.width * scale
                 val scaledHeight = bitmap.height * scale
@@ -129,9 +162,10 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
                 canvas.scale(scale, scale)
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
+                // Use the injected ParticleSystem instance
+                particleSystem.addTrailParticles(projectile.x, projectile.y + statusBarHeight, projectile.speedX, projectile.speedY)
             } else {
                 Timber.w("Projectile bitmap for weaponType ${projectile.weaponType} is null or recycled")
-                // Fallback: Draw a white circle if the bitmap is unavailable
                 val paint = Paint().apply {
                     color = Color.WHITE
                     isAntiAlias = true
@@ -157,7 +191,6 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
 
-                // Draw HP bar for enemies with health > 100 (e.g., ArmoredEnemy)
                 if (enemyShip.health > 100f) {
                     val hpBarLeft = enemyShip.x - HP_BAR_WIDTH / 2f
                     val hpBarTop = enemyShip.y - scaledHeight / 2f - HP_BAR_OFFSET - HP_BAR_HEIGHT + statusBarHeight
@@ -166,7 +199,7 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
 
                     canvas.drawRect(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom, hpBarBackgroundPaint)
 
-                    val hpFraction = enemyShip.health / 200f // Assuming 200 is max for ArmoredEnemy
+                    val hpFraction = enemyShip.health / 200f
                     hpBarFillPaint.color = when {
                         hpFraction > 0.5f -> Color.GREEN
                         hpFraction > 0.25f -> Color.YELLOW
@@ -228,6 +261,8 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
     fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<Projectile>, statusBarHeight: Float) {
         enemyProjectiles.forEach { projectile ->
             canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, enemyProjectilePaint)
+            // Use the injected ParticleSystem instance
+            particleSystem.addTrailParticles(projectile.x, projectile.y + statusBarHeight, projectile.speedX, projectile.speedY)
         }
     }
 
@@ -235,7 +270,6 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
         homingProjectiles.forEach { projectile ->
             val bitmap = projectileBitmaps[projectile.weaponType]
             if (bitmap != null && !bitmap.isRecycled) {
-                // Scale the bitmap to a reasonable size for projectiles
                 val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
                 val scaledWidth = bitmap.width * scale
                 val scaledHeight = bitmap.height * scale
@@ -244,6 +278,8 @@ class GameObjectRenderer @Inject constructor(@ApplicationContext private val con
                 canvas.scale(scale, scale)
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
+                // Use the injected ParticleSystem instance
+                particleSystem.addTrailParticles(projectile.x, projectile.y + statusBarHeight, projectile.speedX, projectile.speedY)
             } else {
                 Timber.w("Homing projectile bitmap for weaponType ${projectile.weaponType} is null or recycled")
                 canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, homingProjectilePaint)

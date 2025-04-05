@@ -22,7 +22,7 @@ class GameObjectManager @Inject constructor(
     private var bossDefeated = false
 
     private val powerUpSpawnRateBase = 2000L
-    private val asteroidSpawnRateBase = 500L
+    private val asteroidSpawnRateBase = 1000L // Increased base spawn rate to spawn fewer asteroids at low levels
     private val enemySpawnRateBase = 5000L
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
@@ -36,7 +36,7 @@ class GameObjectManager @Inject constructor(
     private val bitmapManager: BitmapManager = BitmapManager(audioManager.context)
 
     companion object {
-        const val MAX_ASTEROIDS = 20 // Limit total asteroids on screen
+        const val BASE_MAX_ASTEROIDS = 5 // Base limit at low levels
     }
 
     fun getBoss(): BossShip? = boss
@@ -44,8 +44,7 @@ class GameObjectManager @Inject constructor(
     fun spawnPowerUp(screenWidth: Float) {
         val x = Random.nextFloat() * screenWidth
         val y = 0f
-        val types =
-            listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility")
+        val types = listOf("power_up", "shield", "speed", "stealth", "warp", "star", "invincibility")
         val type = if (Random.nextFloat() < 0.4f) "power_up" else types.random()
         powerUps.add(PowerUp(x, y, type))
     }
@@ -55,13 +54,15 @@ class GameObjectManager @Inject constructor(
     }
 
     fun spawnAsteroid(screenWidth: Float, environment: FlightModeManager.Environment) {
-        if (asteroids.size >= MAX_ASTEROIDS) return // Prevent overcrowding
+        // Adjust max asteroids based on level: start at BASE_MAX_ASTEROIDS, increase to 20 by level 50
+        val maxAsteroids = BASE_MAX_ASTEROIDS + (15 * (level.toFloat() / 50f).coerceIn(0f, 1f)).toInt()
+        if (asteroids.size >= maxAsteroids) return // Prevent overcrowding
 
         val x = Random.nextFloat() * screenWidth
         val y = -screenHeight * 0.1f
         val size = Random.nextFloat() * 30f + 20f // Random size between 20 and 50
         val rotation = Random.nextFloat() * 20f // Random initial rotation
-        val angularVelocity = Random.nextFloat() * 0.2f - 0.1f // Random spin speed
+        val angularVelocity = Random.nextFloat() * 6f - 3f // Random spin speed
 
         val asteroidProbability = if (environment == FlightModeManager.Environment.ASTEROID_FIELD) {
             FlightModeManager.GIANT_ASTEROID_PROBABILITY * 1.5f // More giant asteroids in asteroid fields
@@ -111,6 +112,8 @@ class GameObjectManager @Inject constructor(
         Timber.d("Boss spawned at level $level (tier $tier) with HP=$bossHp, shotInterval=${boss!!.shotInterval}, movementInterval=${boss!!.movementInterval}")
     }
 
+    private var level: Int = 1 // Store the level for use in spawnAsteroid
+
     fun updateGameObjects(
         level: Int,
         shipX: Float,
@@ -121,6 +124,7 @@ class GameObjectManager @Inject constructor(
         environment: FlightModeManager.Environment,
         onBossDefeated: () -> Unit
     ) {
+        this.level = level // Update the stored level
         this.currentProjectileSpeed = currentProjectileSpeed
         this.screenWidth = screenWidth
         this.screenHeight = screenHeight
@@ -148,27 +152,15 @@ class GameObjectManager @Inject constructor(
                     projectile.x + FlightModeManager.PROJECTILE_SIZE,
                     projectile.y + FlightModeManager.PROJECTILE_SIZE
                 )
-                val bossRect = RectF(
-                    localBoss.x - 75f,
-                    localBoss.y - 75f,
-                    localBoss.x + 75f,
-                    localBoss.y + 75f
-                )
+                val bossRect = RectF(localBoss.x - 75f, localBoss.y - 75f, localBoss.x + 75f, localBoss.y + 75f)
                 if (projectileRect.intersect(bossRect)) {
                     localBoss.hp -= 10f
                     projectilesToRemove.add(projectile)
                     renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
                     Timber.d("Boss hit by regular projectile, HP decreased to ${localBoss.hp}")
                     if (localBoss.hp <= 0) {
-                        renderer.shipRendererInstance.addExplosionParticles(
-                            localBoss.x,
-                            localBoss.y
-                        )
-                        renderer.shipRendererInstance.addScoreTextParticle(
-                            localBoss.x,
-                            localBoss.y,
-                            "+500"
-                        )
+                        renderer.shipRendererInstance.addExplosionParticles(localBoss.x, localBoss.y)
+                        renderer.shipRendererInstance.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
                         spawnPowerUp(localBoss.x, localBoss.y, "star")
                         spawnPowerUp(localBoss.x + 20f, localBoss.y + 20f, "power_up")
                         Timber.d("Boss defeated! Dropped star and fuel power-up at (x=${localBoss.x}, y=${localBoss.y})")
@@ -179,31 +171,16 @@ class GameObjectManager @Inject constructor(
                 }
             }
             if (localBoss != null) {
-                val bossRect = RectF(
-                    localBoss.x - 75f,
-                    localBoss.y - 75f,
-                    localBoss.x + 75f,
-                    localBoss.y + 75f
-                )
+                val bossRect = RectF(localBoss.x - 75f, localBoss.y - 75f, localBoss.x + 75f, localBoss.y + 75f)
                 for (projectile in homingProjectiles) {
                     if (projectile.target == localBoss && projectile.checkCollision(bossRect)) {
                         localBoss.hp -= 20f
                         homingProjectilesToRemove.add(projectile)
-                        renderer.shipRendererInstance.addExplosionParticles(
-                            projectile.x,
-                            projectile.y
-                        )
+                        renderer.shipRendererInstance.addExplosionParticles(projectile.x, projectile.y)
                         Timber.d("Boss hit by homing missile, HP decreased to ${localBoss.hp}")
                         if (localBoss.hp <= 0) {
-                            renderer.shipRendererInstance.addExplosionParticles(
-                                localBoss.x,
-                                localBoss.y
-                            )
-                            renderer.shipRendererInstance.addScoreTextParticle(
-                                localBoss.x,
-                                localBoss.y,
-                                "+500"
-                            )
+                            renderer.shipRendererInstance.addExplosionParticles(localBoss.x, localBoss.y)
+                            renderer.shipRendererInstance.addScoreTextParticle(localBoss.x, localBoss.y, "+500")
                             spawnPowerUp(localBoss.x, localBoss.y, "star")
                             spawnPowerUp(localBoss.x + 20f, localBoss.y + 20f, "power_up")
                             Timber.d("Boss defeated! Dropped star and fuel power-up at (x=${localBoss.x}, y=${localBoss.y})")
@@ -218,9 +195,10 @@ class GameObjectManager @Inject constructor(
             homingProjectiles.removeAll(homingProjectilesToRemove)
         } else {
             val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.03f)).toLong()
+            // Adjust spawn rate: start at 1000ms at level 1, decrease to 200ms by level 50
             val asteroidSpawnRate = when (environment) {
-                FlightModeManager.Environment.ASTEROID_FIELD -> (asteroidSpawnRateBase / (1 + level * 0.05f) / 1.5).toLong() // More frequent in asteroid fields
-                else -> (asteroidSpawnRateBase / (1 + level * 0.05f)).toLong()
+                FlightModeManager.Environment.ASTEROID_FIELD -> (asteroidSpawnRateBase - (800f * (level.toFloat() / 50f).coerceIn(0f, 1f)) / 1.5).toLong()
+                else -> (asteroidSpawnRateBase - (800f * (level.toFloat() / 50f).coerceIn(0f, 1f))).toLong()
             }
             val enemySpawnRate = when (environment) {
                 FlightModeManager.Environment.NEBULA -> (enemySpawnRateBase / (1 + level * 0.05f) / 1.5).toLong() // More frequent in nebula
@@ -256,16 +234,7 @@ class GameObjectManager @Inject constructor(
                 val angle = atan2(dy, dx)
                 val speedX = cos(angle) * currentProjectileSpeed
                 val speedY = sin(angle) * currentProjectileSpeed
-                enemyProjectiles.add(
-                    Projectile(
-                        enemy.x,
-                        enemy.y,
-                        speedX,
-                        speedY,
-                        screenHeight,
-                        screenWidth
-                    )
-                )
+                enemyProjectiles.add(Projectile(enemy.x, enemy.y, speedX, speedY, screenHeight, screenWidth))
                 enemy.lastShotTime = currentTime
                 Timber.d("Enemy shot projectile towards player")
             }

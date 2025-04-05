@@ -52,7 +52,8 @@ open class Asteroid(
     open fun update(screenWidth: Float, screenHeight: Float, level: Int) {
         val radius = screenWidth / 8f
         val angle = (System.currentTimeMillis() % 10000) / 10000f * 2 * Math.PI.toFloat()
-        val speed = 5f + level * 0.1f
+        // Adjust speed: start at 2 units per frame at level 1, increase to 10 units per frame by level 50
+        val speed = 2f + (8f * (level.toFloat() / 50f).coerceIn(0f, 1f)) // Linearly interpolate from 2 to 10
         x += cos(angle) * speed
         y += sin(angle) * speed + speed
         rotation += angularVelocity

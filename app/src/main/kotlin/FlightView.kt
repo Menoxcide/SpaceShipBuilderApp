@@ -13,6 +13,13 @@ import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
 import android.graphics.drawable.BitmapDrawable
+import kotlin.random.Random
+import android.graphics.RadialGradient
+import android.graphics.Paint
+import android.graphics.Shader
+import android.graphics.Color
+import kotlin.math.sin
+import android.graphics.Typeface
 
 @AndroidEntryPoint
 class FlightView @Inject constructor(
@@ -32,12 +39,48 @@ class FlightView @Inject constructor(
     private var updateRunnable: Runnable? = null
     private var userId: String? = null
     private var lastProjectileSpawnTime = 0L
-    private val projectileSpawnInterval = 1000L // 1 second interval
+    private val projectileSpawnInterval = 1000L
 
     private var pendingGameMode: GameState? = null
+    private var shakeTime: Long = 0L
+    private var shakeDuration: Long = 300L
+    private var shakeMagnitude: Float = 10f
+
+    private val warningPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+    }
+    private var warningPhase: Float = 0f
+    private val warningRadius: Float
+        get() = Math.max(screenWidth, screenHeight) * 1.5f
+
+    private val flashPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+    }
+    private var flashStartTime: Long = 0L
+    private val flashDuration: Long = 300L
+
+    private val hudPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.argb(200, 0, 255, 255) // Cyan with slight transparency
+        textSize = 30f
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        setShadowLayer(5f, 2f, 2f, Color.argb(255, 0, 200, 200))
+    }
+    private val hudBarPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+    }
+    private val hudBorderPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.argb(200, 0, 255, 255)
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
 
     init {
-        setWillNotDraw(false) // Ensure onDraw is called
+        setWillNotDraw(false)
         if (BuildConfig.DEBUG) Timber.d("FlightView initialized")
     }
 
@@ -70,7 +113,6 @@ class FlightView @Inject constructor(
         destroyAllButton.isEnabled = charges > 0
         destroyAllButton.visibility = if (gameState == GameState.FLIGHT && charges > 0) View.VISIBLE else View.GONE
 
-        // Scale the destroy_all drawable to 64x64dp
         val drawable = resources.getDrawable(R.drawable.destroy_all, null)
         val bitmap = (drawable as BitmapDrawable).bitmap
         val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, true)
@@ -121,12 +163,34 @@ class FlightView @Inject constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas) // Draw child views (buttons)
+        super.onDraw(canvas)
         if (gameStateManager.gameState != GameState.FLIGHT || visibility != View.VISIBLE) {
             Timber.w("onDraw skipped: gameState=${gameStateManager.gameState}, visibility=$visibility")
             return
         }
         Timber.d("onDraw called, visibility=$visibility, gameState=${gameStateManager.gameState}")
+
+        // Update warning animation phase
+        warningPhase = (warningPhase + 0.05f) % (2 * Math.PI.toFloat())
+
+        // Apply screen shake if active
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - gameEngine.glowStartTime <= shakeDuration) {
+            shakeTime = gameEngine.glowStartTime
+            val timeSinceShake = (currentTime - shakeTime).toFloat() / shakeDuration
+            val shakeOffsetX = Random.nextFloat() * shakeMagnitude * (1f - timeSinceShake)
+            val shakeOffsetY = Random.nextFloat() * shakeMagnitude * (1f - timeSinceShake)
+            canvas.translate(shakeOffsetX, shakeOffsetY)
+        }
+
+        // Check for level-up flash
+        if (currentTime - flightModeManager.levelUpAnimationStartTime <= flashDuration) {
+            flashStartTime = flightModeManager.levelUpAnimationStartTime
+            val timeSinceFlash = (currentTime - flashStartTime).toFloat() / flashDuration
+            val flashAlpha = (255 * (1f - timeSinceFlash)).toInt().coerceIn(0, 255)
+            flashPaint.color = Color.argb(flashAlpha, 255, 255, 255)
+            canvas.drawRect(0f, 0f, screenWidth, screenHeight, flashPaint)
+        }
 
         renderer.drawBackground(canvas, screenWidth, screenHeight, statusBarHeight, gameEngine.level, gameEngine.currentEnvironment)
         renderer.drawShip(
@@ -148,6 +212,60 @@ class FlightView @Inject constructor(
         renderer.drawBoss(canvas, gameEngine.getBoss(), statusBarHeight)
         renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
         renderer.drawHomingProjectiles(canvas, gameEngine.homingProjectiles, statusBarHeight)
+
+        // Draw warning vignette if HP or fuel is low
+        val hpFraction = gameEngine.hp / gameEngine.maxHp
+        val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
+        if (hpFraction < 0.3f || fuelFraction < 0.3f) {
+            val warningColor = if (hpFraction < 0.3f) Color.RED else Color.YELLOW
+            val warningAlpha = (sin(warningPhase.toDouble()) * 127f + 128f).toInt()
+            warningPaint.shader = RadialGradient(
+                screenWidth / 2f, screenHeight / 2f,
+                warningRadius,
+                Color.TRANSPARENT,
+                Color.argb(warningAlpha, Color.red(warningColor), Color.green(warningColor), Color.blue(warningColor)),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, 0f, screenWidth, screenHeight, warningPaint)
+        }
+
+        // Draw holographic HUD
+        val hudMargin = 20f
+        val barWidth = 150f
+        val barHeight = 20f
+        val textOffset = 40f
+        val barSpacing = 10f
+
+        // HP Bar
+        val hpBarTop = statusBarHeight + hudMargin
+        val hpBarLeft = hudMargin
+        canvas.drawText("HP: ${gameEngine.hp.toInt()}/${gameEngine.maxHp.toInt()}", hpBarLeft, hpBarTop - 10f, hudPaint)
+        hudBarPaint.color = when {
+            hpFraction > 0.5f -> Color.GREEN
+            hpFraction > 0.3f -> Color.YELLOW
+            else -> Color.RED
+        }
+        val hpBarFilledWidth = barWidth * hpFraction
+        canvas.drawRect(hpBarLeft, hpBarTop, hpBarLeft + hpBarFilledWidth, hpBarTop + barHeight, hudBarPaint)
+        canvas.drawRect(hpBarLeft, hpBarTop, hpBarLeft + barWidth, hpBarTop + barHeight, hudBorderPaint)
+
+        // Fuel Bar
+        val fuelBarTop = hpBarTop + barHeight + barSpacing + textOffset
+        canvas.drawText("Fuel: ${gameEngine.fuel.toInt()}/${gameEngine.fuelCapacity.toInt()}", hpBarLeft, fuelBarTop - 10f, hudPaint)
+        hudBarPaint.color = Color.BLUE
+        val fuelBarFilledWidth = barWidth * fuelFraction
+        canvas.drawRect(hpBarLeft, fuelBarTop, hpBarLeft + fuelBarFilledWidth, fuelBarTop + barHeight, hudBarPaint)
+        canvas.drawRect(hpBarLeft, fuelBarTop, hpBarLeft + barWidth, fuelBarTop + barHeight, hudBorderPaint)
+
+        // Missiles
+        val missileTextTop = fuelBarTop + barHeight + barSpacing + textOffset
+        canvas.drawText("Missiles: ${gameEngine.missileCount}/${gameEngine.maxMissiles}", hpBarLeft, missileTextTop, hudPaint)
+
+        // Level and Score on the right side
+        val rightTextX = screenWidth - hudMargin - 150f
+        canvas.drawText("Level: ${gameEngine.level}", rightTextX, hpBarTop, hudPaint)
+        canvas.drawText("Score: ${flightModeManager.currentScore}", rightTextX, hpBarTop + textOffset, hudPaint)
+
         renderer.drawStats(canvas, gameEngine, statusBarHeight, gameStateManager.gameState)
         renderer.drawAIMessages(canvas, gameEngine.aiAssistant, statusBarHeight)
         Timber.d("Rendered frame in FlightView with ship at (x=${gameEngine.shipX}, y=${gameEngine.shipY})")

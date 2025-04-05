@@ -26,9 +26,16 @@ class ParticleSystem(private val context: Context) {
     private val powerUpSpriteParticles = CopyOnWriteArrayList<PowerUpSpriteParticle>()
     private val scoreTextParticles = CopyOnWriteArrayList<ScoreTextParticle>()
     private val missileExhaustParticles = CopyOnWriteArrayList<MissileExhaustParticle>()
+    private val sparkleParticles = CopyOnWriteArrayList<SparkleParticle>() // New: Sparkle particles for power-ups
+    private val trailParticles = CopyOnWriteArrayList<TrailParticle>() // New: Trail particles for projectiles
 
     private var exhaustBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.exhaust)
         ?: throw IllegalStateException("Exhaust bitmap not found")
+    private var sparkleBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.sparkle)
+        ?: throw IllegalStateException("Sparkle bitmap not found") // New sprite needed
+    private var trailBitmap: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.trail)
+        ?: throw IllegalStateException("Trail bitmap not found") // New sprite needed
+
     private val exhaustPaint = Paint().apply { isAntiAlias = true }
     private val collectionPaint = Paint().apply { isAntiAlias = true }
     private val collisionPaint = Paint().apply { isAntiAlias = true }
@@ -41,7 +48,6 @@ class ParticleSystem(private val context: Context) {
     private val powerUpSpritePaint = Paint().apply { isAntiAlias = true }
     private val explosionPaint = Paint().apply {
         isAntiAlias = true
-        color = Color.RED
     }
     private val scoreTextPaint = Paint().apply {
         isAntiAlias = true
@@ -53,6 +59,8 @@ class ParticleSystem(private val context: Context) {
         isAntiAlias = true
         color = Color.YELLOW
     }
+    private val sparklePaint = Paint().apply { isAntiAlias = true } // New paint for sparkles
+    private val trailPaint = Paint().apply { isAntiAlias = true } // New paint for trails
     private val powerUpTextPaints = mapOf(
         "power_up" to Paint().apply {
             isAntiAlias = true
@@ -120,6 +128,10 @@ class ParticleSystem(private val context: Context) {
         const val POWER_UP_SPRITE_COUNT = 5
         const val SCORE_TEXT_LIFE_DECAY = 0.02f
         const val MISSILE_EXHAUST_LIFE_DECAY = 0.05f
+        const val SPARKLE_LIFE_DECAY = 0.02f // New constant for sparkles
+        const val TRAIL_LIFE_DECAY = 0.05f // New constant for trails
+        const val TRAIL_WIDTH = 8f // New constant for trail width
+        const val TRAIL_HEIGHT = 16f // New constant for trail height
     }
 
     data class ExhaustParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
@@ -174,7 +186,7 @@ class ParticleSystem(private val context: Context) {
         fun isDead() = life <= 0f
     }
 
-    data class ExplosionParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float) {
+    data class ExplosionParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var size: Float, var color: Int) {
         fun update() {
             x += speedX
             y += speedY
@@ -214,6 +226,24 @@ class ParticleSystem(private val context: Context) {
             x += speedX
             y += speedY
             life -= MISSILE_EXHAUST_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class SparkleParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float, var scale: Float) {
+        fun update() {
+            x += speedX
+            y += speedY
+            life -= SPARKLE_LIFE_DECAY
+        }
+        fun isDead() = life <= 0f
+    }
+
+    data class TrailParticle(var x: Float, var y: Float, var speedX: Float, var speedY: Float, var life: Float) {
+        fun update() {
+            x += speedX
+            y += speedY
+            life -= TRAIL_LIFE_DECAY
         }
         fun isDead() = life <= 0f
     }
@@ -317,13 +347,17 @@ class ParticleSystem(private val context: Context) {
                 )
             )
         }
-        Timber.d("Added ${powerUpSpriteParticles.size} power-up sprite particles at (x=$x, y=$y) for $powerUpType")
+        // Add sparkle particles for extra flair
+        addSparkleParticles(x, y)
+        Timber.d("Added ${powerUpSpriteParticles.size} power-up sprite particles and sparkles at (x=$x, y=$y) for $powerUpType")
     }
 
     fun addExplosionParticles(x: Float, y: Float) {
         repeat(EXPLOSION_PARTICLE_COUNT) {
             val angle = Random.nextFloat() * 360f
             val speed = Random.nextFloat() * 10f + 5f
+            // Vary color between orange and yellow
+            val color = if (Random.nextBoolean()) Color.rgb(255, 165, 0) else Color.YELLOW
             explosionParticles.add(
                 ExplosionParticle(
                     x = x,
@@ -331,7 +365,8 @@ class ParticleSystem(private val context: Context) {
                     speedX = kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat() * speed,
                     speedY = kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat() * speed,
                     life = 1.0f,
-                    size = Random.nextFloat() * 10f + 5f
+                    size = Random.nextFloat() * 10f + 5f,
+                    color = color
                 )
             )
         }
@@ -366,6 +401,36 @@ class ParticleSystem(private val context: Context) {
                 )
             )
         }
+    }
+
+    fun addSparkleParticles(x: Float, y: Float) {
+        repeat(10) {
+            val angle = Random.nextFloat() * 360f
+            val speed = Random.nextFloat() * 4f + 2f
+            sparkleParticles.add(
+                SparkleParticle(
+                    x = x,
+                    y = y,
+                    speedX = kotlin.math.cos(Math.toRadians(angle.toDouble())).toFloat() * speed,
+                    speedY = kotlin.math.sin(Math.toRadians(angle.toDouble())).toFloat() * speed,
+                    life = 1f,
+                    scale = Random.nextFloat() * 0.5f + 0.5f
+                )
+            )
+        }
+        Timber.d("Added ${sparkleParticles.size} sparkle particles at (x=$x, y=$y)")
+    }
+
+    fun addTrailParticles(x: Float, y: Float, speedX: Float, speedY: Float) {
+        trailParticles.add(
+            TrailParticle(
+                x = x,
+                y = y,
+                speedX = speedX * 0.5f, // Slower than the projectile for a trailing effect
+                speedY = speedY * 0.5f,
+                life = 1f
+            )
+        )
     }
 
     fun drawExhaustParticles(canvas: Canvas) {
@@ -473,6 +538,7 @@ class ParticleSystem(private val context: Context) {
         val particlesToRemove = mutableListOf<ExplosionParticle>()
         explosionParticles.forEach { particle ->
             particle.update()
+            explosionPaint.color = particle.color
             explosionPaint.alpha = (particle.life * 255).toInt()
             canvas.drawCircle(particle.x, particle.y, particle.size * particle.life, explosionPaint)
             if (particle.isDead()) particlesToRemove.add(particle)
@@ -518,6 +584,52 @@ class ParticleSystem(private val context: Context) {
         Timber.d("Drawing ${missileExhaustParticles.size} missile exhaust particles")
     }
 
+    fun drawSparkleParticles(canvas: Canvas) {
+        if (sparkleBitmap.isRecycled) {
+            Timber.w("Sparkle bitmap was recycled, reinitializing")
+            sparkleBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.sparkle)
+                ?: throw IllegalStateException("Failed to reload sparkle bitmap")
+        }
+
+        val particlesToRemove = mutableListOf<SparkleParticle>()
+        sparkleParticles.forEach { particle ->
+            particle.update()
+            sparklePaint.alpha = (particle.life * 255).toInt()
+            val scaledWidth = sparkleBitmap.width * particle.scale
+            val scaledHeight = sparkleBitmap.height * particle.scale
+            canvas.withSave {
+                translate(particle.x - scaledWidth / 2, particle.y - scaledHeight / 2)
+                scale(particle.scale, particle.scale)
+                drawBitmap(sparkleBitmap, 0f, 0f, sparklePaint)
+            }
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        sparkleParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${sparkleParticles.size} sparkle particles")
+    }
+
+    fun drawTrailParticles(canvas: Canvas) {
+        if (trailBitmap.isRecycled) {
+            Timber.w("Trail bitmap was recycled, reinitializing")
+            trailBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.trail)
+                ?: throw IllegalStateException("Failed to reload trail bitmap")
+        }
+
+        val particlesToRemove = mutableListOf<TrailParticle>()
+        trailParticles.forEach { particle ->
+            particle.update()
+            trailPaint.alpha = (particle.life * 255).toInt()
+            canvas.withSave {
+                translate(particle.x, particle.y)
+                scale(particle.life, particle.life, TRAIL_WIDTH / 2, TRAIL_HEIGHT / 2)
+                drawBitmap(trailBitmap, 0f, 0f, trailPaint)
+            }
+            if (particle.isDead()) particlesToRemove.add(particle)
+        }
+        trailParticles.removeAll(particlesToRemove)
+        Timber.d("Drawing ${trailParticles.size} trail particles")
+    }
+
     fun clearParticles() {
         exhaustParticles.clear()
         warpParticles.clear()
@@ -529,11 +641,13 @@ class ParticleSystem(private val context: Context) {
         powerUpSpriteParticles.clear()
         scoreTextParticles.clear()
         missileExhaustParticles.clear()
+        sparkleParticles.clear()
+        trailParticles.clear()
     }
 
     fun onDestroy() {
         clearParticles()
-        // Do not recycle exhaustBitmap here; keep it alive for the app's lifetime
+        // Do not recycle bitmaps here; keep them alive for the app's lifetime
         Timber.d("ParticleSystem onDestroy called")
     }
 
