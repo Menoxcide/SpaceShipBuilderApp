@@ -7,7 +7,7 @@ import kotlin.math.sin
 
 class ShipRenderer @Inject constructor(
     private val bitmapManager: BitmapManager,
-    private val particleSystem: ParticleSystem // Already correctly named
+    private val particleSystem: ParticleSystem
 ) {
     private val shipTintPaint = Paint().apply { isAntiAlias = true }
     private val glowPaint = Paint().apply {
@@ -120,7 +120,6 @@ class ShipRenderer @Inject constructor(
             particleSystem.drawScoreTextParticles(canvas)
             particleSystem.drawMissileExhaustParticles(canvas)
             particleSystem.drawSparkleParticles(canvas)
-            particleSystem.drawTrailParticles(canvas)
 
             val barWidth = 8f
             val offset = 2f
@@ -161,7 +160,6 @@ class ShipRenderer @Inject constructor(
         }
     }
 
-    // Delegate particle-related methods to ParticleSystem
     fun addCollectionParticles(x: Float, y: Float) {
         particleSystem.addCollectionParticles(x, y)
     }

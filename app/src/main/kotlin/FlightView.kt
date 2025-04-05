@@ -3,7 +3,16 @@ package com.example.spaceshipbuilderapp
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
+import android.graphics.Shader
+import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -11,20 +20,10 @@ import android.widget.FrameLayout
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
 import javax.inject.Inject
-import android.graphics.drawable.BitmapDrawable
-import kotlin.random.Random
-import android.graphics.RadialGradient
-import android.graphics.Paint
-import android.graphics.Shader
-import android.graphics.Color
-import kotlin.math.sin
-import android.graphics.Typeface
-import android.graphics.BitmapFactory
-import android.graphics.Path
 import kotlin.math.cos
-import android.text.StaticLayout
-import android.text.Layout
 import kotlin.math.max
+import kotlin.math.sin
+import kotlin.random.Random
 
 @AndroidEntryPoint
 class FlightView @Inject constructor(
@@ -50,8 +49,8 @@ class FlightView @Inject constructor(
     private var shakeTime: Long = 0L
     private var shakeDuration: Long = 300L
     private var shakeMagnitude: Float = 10f
-    private var currentShakeOffsetX: Float = 0f // Store the current shake offset
-    private var currentShakeOffsetY: Float = 0f // Store the current shake offset
+    private var currentShakeOffsetX: Float = 0f
+    private var currentShakeOffsetY: Float = 0f
 
     private val warningPaint = Paint().apply {
         isAntiAlias = true
@@ -117,7 +116,6 @@ class FlightView @Inject constructor(
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
     }
 
-    // HUD Buttons (Pause and Destroy All)
     private var pauseButtonBitmap: Bitmap? = null
     private var destroyAllButtonBitmap: Bitmap? = null
     private var pauseButtonRect: RectF? = null
@@ -128,12 +126,10 @@ class FlightView @Inject constructor(
 
     init {
         setWillNotDraw(false)
-        // Load the robot sprite
         robotBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.robot_companion)
         if (robotBitmap == null) {
             Timber.w("Failed to load robot_companion bitmap")
         }
-        // Load button bitmaps and scale to 64x64 pixels
         pauseButtonBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.pause_icon)?.let {
             Bitmap.createScaledBitmap(it, 64, 64, true)
         }
@@ -181,7 +177,6 @@ class FlightView @Inject constructor(
         Timber.d("Updated pauseButton: visible=$pauseButtonVisible, gameState=$gameState")
     }
 
-    // Method to programmatically trigger the pause action
     fun triggerPause() {
         if (pauseButtonVisible) {
             gameStateManager.setGameState(GameState.BUILD, screenWidth, screenHeight, flightModeManager::resetFlightData, gameEngine::savePersistentData, userId ?: "default", gameEngine)
@@ -189,7 +184,6 @@ class FlightView @Inject constructor(
         }
     }
 
-    // Method to programmatically trigger the destroy all action
     fun triggerDestroyAll(): Boolean {
         if (destroyAllButtonVisible && destroyAllButtonEnabled) {
             val success = flightModeManager.destroyAll()
@@ -243,11 +237,9 @@ class FlightView @Inject constructor(
         }
         Timber.d("onDraw called, visibility=$visibility, gameState=${gameStateManager.gameState}")
 
-        // Update warning and robot animation phases
         warningPhase = (warningPhase + 0.05f) % (2 * Math.PI.toFloat())
         robotPhase = (robotPhase + 0.05f) % (2 * Math.PI.toFloat())
 
-        // Apply screen shake if active
         val currentTime = System.currentTimeMillis()
         currentShakeOffsetX = 0f
         currentShakeOffsetY = 0f
@@ -259,7 +251,6 @@ class FlightView @Inject constructor(
             canvas.translate(currentShakeOffsetX, currentShakeOffsetY)
         }
 
-        // Check for level-up flash
         if (currentTime - flightModeManager.levelUpAnimationStartTime <= flashDuration) {
             flashStartTime = flightModeManager.levelUpAnimationStartTime
             val timeSinceFlash = (currentTime - flashStartTime).toFloat() / flashDuration
@@ -284,13 +275,12 @@ class FlightView @Inject constructor(
 
         renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
-        renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight)
+        renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight) // Trails are drawn within this method before projectiles
         renderer.drawEnemyShips(canvas, gameEngine.enemyShips, statusBarHeight)
         renderer.drawBoss(canvas, gameEngine.getBoss(), statusBarHeight)
         renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
         renderer.drawHomingProjectiles(canvas, gameEngine.homingProjectiles, statusBarHeight)
 
-        // Draw warning vignette if HP or fuel is low
         val hpFraction = gameEngine.hp / gameEngine.maxHp
         val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
         if (hpFraction < 0.3f || fuelFraction < 0.3f) {
@@ -306,16 +296,14 @@ class FlightView @Inject constructor(
             canvas.drawRect(0f, 0f, screenWidth, screenHeight, warningPaint)
         }
 
-        // Draw holographic HUD
-        val hudMargin = 50f // Margin from screen edges
+        val hudMargin = 50f
         val barWidth = 150f
         val barHeight = 20f
         val textOffset = 40f
         val barSpacing = 10f
-        val buttonSize = 64f // Size of HUD buttons
-        val buttonSpacing = 10f // Space between HUD buttons
+        val buttonSize = 64f
+        val buttonSpacing = 10f
 
-        // HP Bar (Left Side)
         val hpBarTop = statusBarHeight + hudMargin + 20f
         val hpBarLeft = hudMargin
         canvas.drawText("HP: ${gameEngine.hp.toInt()}/${gameEngine.maxHp.toInt()}", hpBarLeft, hpBarTop - 10f, hudPaint)
@@ -328,7 +316,6 @@ class FlightView @Inject constructor(
         canvas.drawRect(hpBarLeft, hpBarTop, hpBarLeft + hpBarFilledWidth, hpBarTop + barHeight, hudBarPaint)
         canvas.drawRect(hpBarLeft, hpBarTop, hpBarLeft + barWidth, hpBarTop + barHeight, hudBorderPaint)
 
-        // Fuel Bar (Left Side, below HP)
         val fuelBarTop = hpBarTop + barHeight + barSpacing + textOffset
         canvas.drawText("Fuel: ${gameEngine.fuel.toInt()}/${gameEngine.fuelCapacity.toInt()}", hpBarLeft, fuelBarTop - 10f, hudPaint)
         hudBarPaint.color = Color.BLUE
@@ -336,21 +323,17 @@ class FlightView @Inject constructor(
         canvas.drawRect(hpBarLeft, fuelBarTop, hpBarLeft + fuelBarFilledWidth, fuelBarTop + barHeight, hudBarPaint)
         canvas.drawRect(hpBarLeft, fuelBarTop, hpBarLeft + barWidth, fuelBarTop + barHeight, hudBorderPaint)
 
-        // Missiles (Left Side, below Fuel)
         val missileTextTop = fuelBarTop + barHeight + barSpacing + textOffset
         canvas.drawText("Missiles: ${gameEngine.missileCount}/${gameEngine.maxMissiles}", hpBarLeft, missileTextTop, hudPaint)
 
-        // Right Side HUD: Level, Score, and Buttons
         val rightTextX = screenWidth - hudMargin - 150f
         val rightHudTop = statusBarHeight + hudMargin + 20f
         canvas.drawText("Level: ${gameEngine.level}", rightTextX, rightHudTop, hudPaint)
         canvas.drawText("Score: ${flightModeManager.currentScore}", rightTextX, rightHudTop + textOffset, hudPaint)
 
-        // Draw Pause and Destroy All Buttons in HUD
-        val buttonYStart = rightHudTop + 2 * textOffset // Position below Score text
-        val buttonX = rightTextX + 100f // Position to the right of the text
+        val buttonYStart = rightHudTop + 2 * textOffset
+        val buttonX = rightTextX + 100f
 
-        // Pause Button
         if (pauseButtonVisible) {
             pauseButtonBitmap?.let { bitmap ->
                 val left = buttonX
@@ -359,7 +342,6 @@ class FlightView @Inject constructor(
                 val bottom = top + buttonSize
                 pauseButtonRect = RectF(left, top, right, bottom)
                 canvas.drawBitmap(bitmap, left, top, null)
-                // Debug: Draw the touchable area for verification
                 if (BuildConfig.DEBUG) {
                     val debugPaint = Paint().apply {
                         color = Color.argb(128, 255, 0, 0)
@@ -373,7 +355,6 @@ class FlightView @Inject constructor(
             pauseButtonRect = null
         }
 
-        // Destroy All Button
         if (destroyAllButtonVisible) {
             destroyAllButtonBitmap?.let { bitmap ->
                 val left = buttonX
@@ -384,12 +365,10 @@ class FlightView @Inject constructor(
                 if (destroyAllButtonEnabled) {
                     canvas.drawBitmap(bitmap, left, top, null)
                 } else {
-                    // Draw disabled state (e.g., semi-transparent)
                     robotPaint.alpha = 128
                     canvas.drawBitmap(bitmap, left, top, robotPaint)
-                    robotPaint.alpha = 255 // Reset alpha
+                    robotPaint.alpha = 255
                 }
-                // Debug: Draw the touchable area for verification
                 if (BuildConfig.DEBUG) {
                     val debugPaint = Paint().apply {
                         color = Color.argb(128, 0, 255, 0)
@@ -403,7 +382,6 @@ class FlightView @Inject constructor(
             destroyAllButtonRect = null
         }
 
-        // Draw distance dial at the top center
         val dialRadius = 50f
         val dialX = screenWidth / 2f
         val dialY = statusBarHeight + hudMargin + dialRadius + 20f
@@ -436,7 +414,6 @@ class FlightView @Inject constructor(
         canvas.drawText("Distance: ${distance.toInt()}", dialX, dialY + dialRadius + 30f, dialTextPaint)
         canvas.drawText("Speed: ${speed.toInt()}", dialX, dialY + dialRadius + 50f, dialTextPaint)
 
-        // Draw AI messages and robot companion as a "talking head" (only for the first message)
         val messages = gameEngine.aiAssistant.getDisplayedMessages()
         if (messages.isNotEmpty()) {
             val padding = 20f
@@ -502,17 +479,14 @@ class FlightView @Inject constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // Get the FlightView's position on the screen
                 val location = IntArray(2)
                 getLocationOnScreen(location)
                 val viewLeft = location[0].toFloat()
                 val viewTop = location[1].toFloat()
 
-                // Adjust touch coordinates for the view's position, screen shake, and status bar
                 val touchX = event.rawX - viewLeft - currentShakeOffsetX
                 val touchY = event.rawY - viewTop - currentShakeOffsetY - statusBarHeight
 
-                // Debug: Log touch coordinates and button bounds
                 if (BuildConfig.DEBUG) {
                     Timber.d("Touch at (rawX=${event.rawX}, rawY=${event.rawY}), view position (left=$viewLeft, top=$viewTop), adjusted (touchX=$touchX, touchY=$touchY), statusBarHeight=$statusBarHeight")
                     pauseButtonRect?.let {
@@ -523,16 +497,13 @@ class FlightView @Inject constructor(
                     }
                 }
 
-                // Check if touch is on HUD buttons
                 if (pauseButtonVisible && pauseButtonRect?.contains(touchX, touchY) == true) {
-                    // Trigger pause action, transitioning to BUILD state
                     gameStateManager.setGameState(GameState.BUILD, screenWidth, screenHeight, flightModeManager::resetFlightData, gameEngine::savePersistentData, userId ?: "default", gameEngine)
                     Timber.d("Pause button clicked, transitioning to BUILD state")
                     return true
                 }
 
                 if (destroyAllButtonVisible && destroyAllButtonEnabled && destroyAllButtonRect?.contains(touchX, touchY) == true) {
-                    // Trigger destroy all action
                     val success = flightModeManager.destroyAll()
                     if (success) {
                         updateDestroyAllButton(gameEngine.destroyAllCharges - 1, gameStateManager.gameState)
@@ -541,7 +512,6 @@ class FlightView @Inject constructor(
                     return true
                 }
 
-                // Existing touch handling for game objects
                 for (enemy in gameEngine.enemyShips) {
                     val enemyRect = RectF(
                         enemy.x - 75f,
@@ -586,13 +556,11 @@ class FlightView @Inject constructor(
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isDragging) {
-                    // Get the FlightView's position on the screen
                     val location = IntArray(2)
                     getLocationOnScreen(location)
                     val viewLeft = location[0].toFloat()
                     val viewTop = location[1].toFloat()
 
-                    // Adjust touch coordinates for the view's position, screen shake, and status bar
                     val touchX = event.rawX - viewLeft - currentShakeOffsetX
                     val touchY = event.rawY - viewTop - currentShakeOffsetY - statusBarHeight
 

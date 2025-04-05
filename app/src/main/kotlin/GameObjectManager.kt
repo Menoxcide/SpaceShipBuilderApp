@@ -22,7 +22,7 @@ class GameObjectManager @Inject constructor(
     private var bossDefeated = false
 
     private val powerUpSpawnRateBase = 2000L
-    private val asteroidSpawnRateBase = 1000L // Increased base spawn rate to spawn fewer asteroids at low levels
+    private val asteroidSpawnRateBase = 1000L
     private val enemySpawnRateBase = 5000L
     private var lastPowerUpSpawnTime = System.currentTimeMillis()
     private var lastAsteroidSpawnTime = System.currentTimeMillis()
@@ -31,12 +31,14 @@ class GameObjectManager @Inject constructor(
     var screenWidth: Float = 0f
     var screenHeight: Float = 0f
 
-    var currentProjectileSpeed: Float = 10f // Temporary field until we refactor further
+    var currentProjectileSpeed: Float = 10f
 
     private val bitmapManager: BitmapManager = BitmapManager(audioManager.context)
 
     companion object {
-        const val BASE_MAX_ASTEROIDS = 5 // Base limit at low levels
+        const val BASE_MAX_ASTEROIDS = 5
+        const val AIM_ASSIST_RANGE = 200f // Range within which aim assist activates
+        const val AIM_ASSIST_STRENGTH = 0.1f // Strength of the trajectory adjustment
     }
 
     fun getBoss(): BossShip? = boss
@@ -54,18 +56,17 @@ class GameObjectManager @Inject constructor(
     }
 
     fun spawnAsteroid(screenWidth: Float, environment: FlightModeManager.Environment) {
-        // Adjust max asteroids based on level: start at BASE_MAX_ASTEROIDS, increase to 20 by level 50
         val maxAsteroids = BASE_MAX_ASTEROIDS + (15 * (level.toFloat() / 50f).coerceIn(0f, 1f)).toInt()
-        if (asteroids.size >= maxAsteroids) return // Prevent overcrowding
+        if (asteroids.size >= maxAsteroids) return
 
         val x = Random.nextFloat() * screenWidth
         val y = -screenHeight * 0.1f
-        val size = Random.nextFloat() * 30f + 20f // Random size between 20 and 50
-        val rotation = Random.nextFloat() * 20f // Random initial rotation
-        val angularVelocity = Random.nextFloat() * 6f - 3f // Random spin speed
+        val size = Random.nextFloat() * 30f + 20f
+        val rotation = Random.nextFloat() * 20f
+        val angularVelocity = Random.nextFloat() * 6f - 3f
 
         val asteroidProbability = if (environment == FlightModeManager.Environment.ASTEROID_FIELD) {
-            FlightModeManager.GIANT_ASTEROID_PROBABILITY * 1.5f // More giant asteroids in asteroid fields
+            FlightModeManager.GIANT_ASTEROID_PROBABILITY * 1.5f
         } else {
             FlightModeManager.GIANT_ASTEROID_PROBABILITY
         }
@@ -87,9 +88,9 @@ class GameObjectManager @Inject constructor(
         val speedY = (5f + level * 0.05f).coerceAtMost(10f)
         val enemyType = when (Random.nextInt(3)) {
             0 -> EnemyShip(x, y, speedY, shotInterval = 4000L)
-            1 -> DroneEnemy(x, y, speedY * 1.5f) // Faster drones
-            2 -> ArmoredEnemy(x, y, speedY * 0.5f) // Slower armored enemies
-            else -> EnemyShip(x, y, speedY, shotInterval = 4000L) // Fallback
+            1 -> DroneEnemy(x, y, speedY * 1.5f)
+            2 -> ArmoredEnemy(x, y, speedY * 0.5f)
+            else -> EnemyShip(x, y, speedY, shotInterval = 4000L)
         }
         enemyShips.add(enemyType)
         Timber.d("Spawned enemy of type ${enemyType.javaClass.simpleName} at (x=$x, y=$y) in environment $environment")
@@ -112,7 +113,7 @@ class GameObjectManager @Inject constructor(
         Timber.d("Boss spawned at level $level (tier $tier) with HP=$bossHp, shotInterval=${boss!!.shotInterval}, movementInterval=${boss!!.movementInterval}")
     }
 
-    private var level: Int = 1 // Store the level for use in spawnAsteroid
+    private var level: Int = 1
 
     fun updateGameObjects(
         level: Int,
@@ -124,7 +125,7 @@ class GameObjectManager @Inject constructor(
         environment: FlightModeManager.Environment,
         onBossDefeated: () -> Unit
     ) {
-        this.level = level // Update the stored level
+        this.level = level
         this.currentProjectileSpeed = currentProjectileSpeed
         this.screenWidth = screenWidth
         this.screenHeight = screenHeight
@@ -195,13 +196,12 @@ class GameObjectManager @Inject constructor(
             homingProjectiles.removeAll(homingProjectilesToRemove)
         } else {
             val powerUpSpawnRate = (powerUpSpawnRateBase * (1 + level * 0.03f)).toLong()
-            // Adjust spawn rate: start at 1000ms at level 1, decrease to 200ms by level 50
             val asteroidSpawnRate = when (environment) {
                 FlightModeManager.Environment.ASTEROID_FIELD -> (asteroidSpawnRateBase - (800f * (level.toFloat() / 50f).coerceIn(0f, 1f)) / 1.5).toLong()
                 else -> (asteroidSpawnRateBase - (800f * (level.toFloat() / 50f).coerceIn(0f, 1f))).toLong()
             }
             val enemySpawnRate = when (environment) {
-                FlightModeManager.Environment.NEBULA -> (enemySpawnRateBase / (1 + level * 0.05f) / 1.5).toLong() // More frequent in nebula
+                FlightModeManager.Environment.NEBULA -> (enemySpawnRateBase / (1 + level * 0.05f) / 1.5).toLong()
                 else -> (enemySpawnRateBase / (1 + level * 0.05f)).toLong()
             }
 
@@ -225,7 +225,12 @@ class GameObjectManager @Inject constructor(
         }
 
         powerUps.forEach { it.update(screenHeight) }
-        projectiles.forEach { it.update() }
+        projectiles.forEach { projectile ->
+            projectile.update()
+            if (projectile !is HomingProjectile) { // Exclude homing missiles from aim assist
+                applyAimAssist(projectile, shipX, shipY)
+            }
+        }
         enemyShips.forEach { enemy ->
             enemy.y += enemy.speedY
             if (currentTime - enemy.lastShotTime >= enemy.shotInterval) {
@@ -246,6 +251,42 @@ class GameObjectManager @Inject constructor(
 
         homingProjectiles.forEach { projectile ->
             projectile.update(this, currentTime)
+        }
+    }
+
+    private fun applyAimAssist(projectile: Projectile, shipX: Float, shipY: Float) {
+        val targets = mutableListOf<Pair<Float, Float>>()
+        enemyShips.forEach { targets.add(it.x to it.y) }
+        asteroids.forEach { targets.add(it.x to it.y) }
+        boss?.let { targets.add(it.x to it.y) }
+
+        var nearestTarget: Pair<Float, Float>? = null
+        var minDistance = AIM_ASSIST_RANGE.toFloat()
+
+        targets.forEach { (targetX, targetY) ->
+            val distance = kotlin.math.hypot(projectile.x - targetX, projectile.y - targetY)
+            if (distance < minDistance) {
+                minDistance = distance
+                nearestTarget = targetX to targetY
+            }
+        }
+
+        nearestTarget?.let { (targetX, targetY) ->
+            val dx = targetX - projectile.x
+            val dy = targetY - projectile.y
+            val distance = kotlin.math.hypot(dx, dy)
+            if (distance > 0) {
+                val adjustX = (dx / distance) * AIM_ASSIST_STRENGTH * currentProjectileSpeed
+                val adjustY = (dy / distance) * AIM_ASSIST_STRENGTH * currentProjectileSpeed
+                projectile.speedX += adjustX
+                projectile.speedY += adjustY
+                // Normalize speed to maintain original magnitude
+                val speedMagnitude = kotlin.math.hypot(projectile.speedX, projectile.speedY)
+                if (speedMagnitude > 0) {
+                    projectile.speedX = (projectile.speedX / speedMagnitude) * currentProjectileSpeed
+                    projectile.speedY = (projectile.speedY / speedMagnitude) * currentProjectileSpeed
+                }
+            }
         }
     }
 

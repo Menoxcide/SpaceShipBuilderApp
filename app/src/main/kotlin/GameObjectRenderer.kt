@@ -12,11 +12,12 @@ import android.graphics.Shader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
+import kotlin.math.atan2
 import kotlin.math.sin
 
 class GameObjectRenderer @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val particleSystem: ParticleSystem // Inject ParticleSystem
+    private val particleSystem: ParticleSystem
 ) {
     private lateinit var powerUpBitmaps: Map<String, Bitmap?>
     private var enemyShipBitmap: Bitmap? = null
@@ -98,7 +99,6 @@ class GameObjectRenderer @Inject constructor(
         powerUps.forEach { powerUp ->
             val bitmap = powerUpBitmaps[powerUp.type]
             if (bitmap != null && !bitmap.isRecycled) {
-                // Draw glow effect
                 val glowColor = when (powerUp.type) {
                     "power_up" -> Color.YELLOW
                     "shield" -> Color.BLUE
@@ -118,8 +118,6 @@ class GameObjectRenderer @Inject constructor(
                     Shader.TileMode.CLAMP
                 )
                 canvas.drawCircle(powerUp.x, powerUp.y + statusBarHeight, GLOW_RADIUS, glowPaint)
-
-                // Draw the power-up bitmap
                 canvas.drawBitmap(bitmap, powerUp.x - bitmap.width / 2f, powerUp.y - bitmap.height / 2f + statusBarHeight, null)
             } else {
                 Timber.w("Bitmap for power-up ${powerUp.type} is null or recycled")
@@ -157,13 +155,13 @@ class GameObjectRenderer @Inject constructor(
                 val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
                 val scaledWidth = bitmap.width * scale
                 val scaledHeight = bitmap.height * scale
+                val angle = atan2(projectile.speedY, projectile.speedX) * 180 / Math.PI.toFloat() + 90
                 canvas.save()
                 canvas.translate(projectile.x - scaledWidth / 2f, projectile.y - scaledHeight / 2f + statusBarHeight)
+                canvas.rotate(angle, scaledWidth / 2f, scaledHeight / 2f)
                 canvas.scale(scale, scale)
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
-                // Use the injected ParticleSystem instance
-                particleSystem.addTrailParticles(projectile.x, projectile.y + statusBarHeight, projectile.speedX, projectile.speedY)
             } else {
                 Timber.w("Projectile bitmap for weaponType ${projectile.weaponType} is null or recycled")
                 val paint = Paint().apply {
@@ -198,7 +196,6 @@ class GameObjectRenderer @Inject constructor(
                     val hpBarBottom = hpBarTop + HP_BAR_HEIGHT
 
                     canvas.drawRect(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom, hpBarBackgroundPaint)
-
                     val hpFraction = enemyShip.health / 200f
                     hpBarFillPaint.color = when {
                         hpFraction > 0.5f -> Color.GREEN
@@ -207,7 +204,6 @@ class GameObjectRenderer @Inject constructor(
                     }
                     val hpBarFillRight = hpBarLeft + HP_BAR_WIDTH * hpFraction.coerceIn(0f, 1f)
                     canvas.drawRect(hpBarLeft, hpBarTop, hpBarFillRight, hpBarBottom, hpBarFillPaint)
-
                     val hpBarRect = RectF(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom)
                     canvas.drawRect(hpBarRect, hpBarBorderPaint)
                 }
@@ -238,7 +234,6 @@ class GameObjectRenderer @Inject constructor(
                 val hpBarBottom = hpBarTop + HP_BAR_HEIGHT
 
                 canvas.drawRect(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom, hpBarBackgroundPaint)
-
                 val hpFraction = boss.hp / boss.maxHp
                 hpBarFillPaint.color = when {
                     hpFraction > 0.5f -> Color.GREEN
@@ -247,7 +242,6 @@ class GameObjectRenderer @Inject constructor(
                 }
                 val hpBarFillRight = hpBarLeft + HP_BAR_WIDTH * hpFraction.coerceIn(0f, 1f)
                 canvas.drawRect(hpBarLeft, hpBarTop, hpBarFillRight, hpBarBottom, hpBarFillPaint)
-
                 val hpBarRect = RectF(hpBarLeft, hpBarTop, hpBarRight, hpBarBottom)
                 canvas.drawRect(hpBarRect, hpBarBorderPaint)
 
@@ -261,8 +255,6 @@ class GameObjectRenderer @Inject constructor(
     fun drawEnemyProjectiles(canvas: Canvas, enemyProjectiles: List<Projectile>, statusBarHeight: Float) {
         enemyProjectiles.forEach { projectile ->
             canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, enemyProjectilePaint)
-            // Use the injected ParticleSystem instance
-            particleSystem.addTrailParticles(projectile.x, projectile.y + statusBarHeight, projectile.speedX, projectile.speedY)
         }
     }
 
@@ -273,13 +265,13 @@ class GameObjectRenderer @Inject constructor(
                 val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
                 val scaledWidth = bitmap.width * scale
                 val scaledHeight = bitmap.height * scale
+                val angle = atan2(projectile.speedY, projectile.speedX) * 180 / Math.PI.toFloat() + 90
                 canvas.save()
                 canvas.translate(projectile.x - scaledWidth / 2f, projectile.y - scaledHeight / 2f + statusBarHeight)
+                canvas.rotate(angle, scaledWidth / 2f, scaledHeight / 2f)
                 canvas.scale(scale, scale)
                 canvas.drawBitmap(bitmap, 0f, 0f, null)
                 canvas.restore()
-                // Use the injected ParticleSystem instance
-                particleSystem.addTrailParticles(projectile.x, projectile.y + statusBarHeight, projectile.speedX, projectile.speedY)
             } else {
                 Timber.w("Homing projectile bitmap for weaponType ${projectile.weaponType} is null or recycled")
                 canvas.drawCircle(projectile.x, projectile.y + statusBarHeight, FlightModeManager.PROJECTILE_SIZE, homingProjectilePaint)
