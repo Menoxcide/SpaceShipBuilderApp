@@ -150,9 +150,8 @@ class FlightView @Inject constructor(
 
     init {
         setWillNotDraw(false)
-        robotBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.robot_companion)
-        if (robotBitmap == null) {
-            Timber.w("Failed to load robot_companion bitmap")
+     robotBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.robot_companion)?.let {
+            Bitmap.createScaledBitmap(it, 256, 256, true)
         }
         pauseButtonBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.pause_icon)?.let {
             Bitmap.createScaledBitmap(it, 64, 64, true)
