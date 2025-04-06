@@ -51,7 +51,7 @@ object AppModule {
     @Singleton
     fun provideGameObjectRenderer(
         @ApplicationContext context: Context,
-        particleSystem: ParticleSystem // Add ParticleSystem dependency
+        particleSystem: ParticleSystem
     ): GameObjectRenderer {
         return GameObjectRenderer(context, particleSystem)
     }
@@ -82,7 +82,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideGameStateManager(): GameStateManager = GameStateManager()
+    fun provideGameStateManager(audioManager: AudioManager): GameStateManager = GameStateManager(audioManager)
 
     @Provides
     @Singleton

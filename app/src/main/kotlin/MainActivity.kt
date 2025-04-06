@@ -195,6 +195,9 @@ class MainActivity : AppCompatActivity() {
         handler.post(animationRunnable)
         requestAudioPermission()
 
+        // Start background music for the initial state (BUILD)
+        audioManager.playBackgroundMusic(R.raw.skyfire_title_screen)
+
         val layoutListener = object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
                 val width = binding.flightView.width.toFloat()
@@ -307,7 +310,6 @@ class MainActivity : AppCompatActivity() {
                     binding.flightView.isEnabled = isLaunching
                     binding.playerNameInput.isVisible = false
                     binding.navigationButtons.isVisible = !isLaunching
-                    // Removed references to pauseButton and destroyAllButton (lines 310-312)
                     binding.shipSpinner.isVisible = !isLaunching
                     binding.weaponSpinner.isVisible = !isLaunching // Show weapon spinner only in build mode
                     if (isLaunching) {
@@ -598,9 +600,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
             overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
         }
-
-        // Removed click listeners for pauseButton and destroyAllButton (lines 604, 617-622)
-        // These are now handled by FlightView's onTouchEvent
 
         partButtons.forEach { (button, _) ->
             button.setOnTouchListener(partTouchListener)

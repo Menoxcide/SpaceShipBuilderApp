@@ -145,6 +145,8 @@ class FlightModeManager @Inject constructor(
                         gameObjectManager.renderer.shipRendererInstance.addCollectionParticles(x, y)
                     }
                     onBossDefeatedChange()
+                    // Switch back to regular flight music after boss defeat
+                    audioManager.playBackgroundMusic(R.raw.battle_in_the_stars)
                     if (shipManager.level > shipManager.highestLevel) {
                         shipManager.highestLevel = shipManager.level
                         onHighestLevelChange(shipManager.highestLevel)

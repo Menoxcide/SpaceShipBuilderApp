@@ -8,9 +8,11 @@ import kotlinx.coroutines.tasks.await
 import timber.log.Timber
 import javax.inject.Inject
 
-enum class GameState { BUILD, FLIGHT, GAME_OVER } // Removed PAUSED state
+enum class GameState { BUILD, FLIGHT, GAME_OVER }
 
-class GameStateManager @Inject constructor() {
+class GameStateManager @Inject constructor(
+    private val audioManager: AudioManager // Inject AudioManager
+) {
     var gameState: GameState = GameState.BUILD
         private set
 
@@ -137,6 +139,24 @@ class GameStateManager @Inject constructor() {
         if (gameState == newState) return
         Timber.d("Transitioning game state from $gameState to $newState, userId=$userId")
 
+        // Play background music based on the new state
+        when (newState) {
+            GameState.BUILD -> {
+                audioManager.playBackgroundMusic(R.raw.skyfire_title_screen) // Build mode music
+            }
+            GameState.FLIGHT -> {
+                // Check if a boss is present
+                if (gameEngine?.flightModeManager?.gameObjectManager?.getBoss() != null) {
+                    audioManager.playBackgroundMusic(R.raw.deathmatch_boss_theme) // Boss fight music
+                } else {
+                    audioManager.playBackgroundMusic(R.raw.battle_in_the_stars) // Flight mode music
+                }
+            }
+            GameState.GAME_OVER -> {
+                audioManager.playBackgroundMusic(R.raw.epic_end) // Game over music
+            }
+        }
+
         if (gameState == GameState.FLIGHT && newState == GameState.BUILD && gameEngine != null) {
             pausedState = saveGameState(gameEngine)
             updateGameStateInFirebase(userId, shouldLoadPausedState = true)
@@ -171,7 +191,6 @@ class GameStateManager @Inject constructor() {
                 }
             }
             GameState.GAME_OVER -> {
-                // Already handled above
                 if (userId != null) {
                     savePersistentData(userId)
                 }
@@ -252,6 +271,13 @@ class GameStateManager @Inject constructor() {
         gameEngine.glowStartTime = state.glowStartTime
         gameEngine.levelUpAnimationStartTime = state.levelUpAnimationStartTime
         gameEngine.flightModeManager.setContinuesUsed(state.continuesUsed)
+
+        // Update background music after restoring state
+        if (state.boss != null) {
+            audioManager.playBackgroundMusic(R.raw.deathmatch_boss_theme)
+        } else {
+            audioManager.playBackgroundMusic(R.raw.battle_in_the_stars)
+        }
     }
 
     fun getPausedState(): PausedGameState? = pausedState
