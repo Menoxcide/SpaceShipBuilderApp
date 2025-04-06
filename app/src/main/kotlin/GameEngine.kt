@@ -716,6 +716,7 @@ class GameEngine @Inject constructor(
                     is WeaponType.Missile -> "Missile"
                     is WeaponType.HomingMissile -> "HomingMissile"
                     is WeaponType.Laser -> "Laser"
+                    else -> {}
                 }
             },
             "selectedWeapon" to when (selectedWeapon) {

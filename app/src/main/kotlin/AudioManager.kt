@@ -1,29 +1,32 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.SoundPool
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import javax.inject.Inject
-import android.media.AudioAttributes
-import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 
 class AudioManager @Inject constructor(
     @ApplicationContext internal val context: Context
 ) {
-    private var soundEffectPlayer: MediaPlayer? = null
     private var backgroundMusicPlayer: MediaPlayer? = null
     private var currentBackgroundMusicResId: Int? = null
     private var isFadingOut: Boolean = false
     private val handler = Handler(Looper.getMainLooper())
     private val fadeDuration = 1000L // 1 second fade duration
     private val fadeStep = 50L // Update every 50ms
-    private var currentVolume: Float = 1.0f
+    private var currentMusicVolume: Float = 1.0f
+
+    private val soundPool: SoundPool
+    private val soundEffectIds = mutableMapOf<Int, Int>() // Resource ID to SoundPool ID
+    private var soundEffectVolume: Float = 1.0f
 
     init {
-        // Initialize background music player with audio attributes for music stream
+        // Initialize background music player
         backgroundMusicPlayer = MediaPlayer().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
@@ -40,16 +43,53 @@ class AudioManager @Inject constructor(
                 it.start()
             }
         }
+
+        // Initialize SoundPool for sound effects
+        val audioAttributes = AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setUsage(AudioAttributes.USAGE_GAME)
+            .build()
+        soundPool = SoundPool.Builder()
+            .setMaxStreams(10) // Allow up to 10 simultaneous sound effects
+            .setAudioAttributes(audioAttributes)
+            .build()
+
+        // Preload sound effects
+        preloadSoundEffects()
     }
 
-    // Play a background music track, fading out the current one if playing
+    private fun preloadSoundEffects() {
+        val soundResources = listOf(
+            R.raw.power_up_sound,
+            R.raw.asteroid_hit,
+            R.raw.boss_shoot,
+            R.raw.dialog_open,
+            R.raw.missile_launch,
+            R.raw.shoot,
+            R.raw.level_up,
+            R.raw.environment_change,
+            R.raw.rotate_sound,
+            R.raw.snap_sound,
+            R.raw.spaceworthy_sound,
+            R.raw.launch_sound
+        )
+        soundResources.forEach { resId ->
+            try {
+                soundEffectIds[resId] = soundPool.load(context, resId, 1)
+                Timber.d("Preloaded sound effect: $resId")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to preload sound effect $resId")
+            }
+        }
+    }
+
+    // Play a background music track with fade transition
     fun playBackgroundMusic(rawResId: Int) {
         if (currentBackgroundMusicResId == rawResId && backgroundMusicPlayer?.isPlaying == true) {
             Timber.d("Background music $rawResId is already playing")
             return
         }
 
-        // Fade out current music if playing
         if (backgroundMusicPlayer?.isPlaying == true) {
             fadeOutBackgroundMusic {
                 startNewBackgroundMusic(rawResId)
@@ -70,29 +110,46 @@ class AudioManager @Inject constructor(
             backgroundMusicPlayer?.prepare()
             backgroundMusicPlayer?.isLooping = true
             currentBackgroundMusicResId = rawResId
-            currentVolume = 1.0f
-            backgroundMusicPlayer?.setVolume(currentVolume, currentVolume)
-            backgroundMusicPlayer?.start()
+            currentMusicVolume = 1.0f
+            backgroundMusicPlayer?.setVolume(currentMusicVolume, currentMusicVolume)
+            fadeInBackgroundMusic()
             Timber.d("Started background music: $rawResId")
         } catch (e: Exception) {
             Timber.e(e, "Failed to play background music $rawResId")
         }
     }
 
+    private fun fadeInBackgroundMusic() {
+        currentMusicVolume = 0f
+        backgroundMusicPlayer?.setVolume(currentMusicVolume, currentMusicVolume)
+        backgroundMusicPlayer?.start()
+        handler.post(object : Runnable {
+            override fun run() {
+                currentMusicVolume += (fadeStep.toFloat() / fadeDuration)
+                if (currentMusicVolume >= 1f) {
+                    currentMusicVolume = 1f
+                    backgroundMusicPlayer?.setVolume(currentMusicVolume, currentMusicVolume)
+                } else {
+                    backgroundMusicPlayer?.setVolume(currentMusicVolume, currentMusicVolume)
+                    handler.postDelayed(this, fadeStep)
+                }
+            }
+        })
+    }
+
     private fun fadeOutBackgroundMusic(onComplete: () -> Unit) {
         if (isFadingOut) return
         isFadingOut = true
-        currentVolume = 1.0f
         handler.post(object : Runnable {
             override fun run() {
-                currentVolume -= (fadeStep.toFloat() / fadeDuration)
-                if (currentVolume <= 0f) {
+                currentMusicVolume -= (fadeStep.toFloat() / fadeDuration)
+                if (currentMusicVolume <= 0f) {
                     backgroundMusicPlayer?.pause()
-                    currentVolume = 0f
+                    currentMusicVolume = 0f
                     isFadingOut = false
                     onComplete()
                 } else {
-                    backgroundMusicPlayer?.setVolume(currentVolume, currentVolume)
+                    backgroundMusicPlayer?.setVolume(currentMusicVolume, currentMusicVolume)
                     handler.postDelayed(this, fadeStep)
                 }
             }
@@ -109,97 +166,55 @@ class AudioManager @Inject constructor(
         }
     }
 
-    fun playPowerUpSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.power_up_sound)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play power-up sound")
-        }
+    fun setBackgroundMusicVolume(volume: Float) {
+        currentMusicVolume = volume.coerceIn(0f, 1f)
+        backgroundMusicPlayer?.setVolume(currentMusicVolume, currentMusicVolume)
+        Timber.d("Background music volume set to $currentMusicVolume")
     }
 
-    fun playCollisionSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.asteroid_hit)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play collision sound")
-        }
+    fun setSoundEffectVolume(volume: Float) {
+        soundEffectVolume = volume.coerceIn(0f, 1f)
+        Timber.d("Sound effect volume set to $soundEffectVolume")
     }
 
-    fun playBossShootSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.boss_shoot)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play boss shoot sound")
-        }
+    private fun playSoundEffect(rawResId: Int) {
+        soundEffectIds[rawResId]?.let { soundId ->
+            try {
+                soundPool.play(soundId, soundEffectVolume, soundEffectVolume, 1, 0, 1.0f)
+                Timber.d("Played sound effect: $rawResId")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to play sound effect $rawResId")
+            }
+        } ?: Timber.w("Sound effect $rawResId not loaded")
     }
 
-    fun playDialogOpenSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.dialog_open)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play dialog open sound")
-        }
-    }
+    fun playPowerUpSound() = playSoundEffect(R.raw.power_up_sound)
 
-    fun playMissileLaunchSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.missile_launch)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play missile launch sound")
-        }
-    }
+    fun playCollisionSound() = playSoundEffect(R.raw.asteroid_hit)
 
-    fun playShootSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.shoot)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play shoot sound")
-        }
-    }
+    fun playBossShootSound() = playSoundEffect(R.raw.boss_shoot)
 
-    fun playLevelUpSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.level_up)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play level up sound")
-        }
-    }
+    fun playDialogOpenSound() = playSoundEffect(R.raw.dialog_open)
 
-    fun playEnvironmentChangeSound() {
-        try {
-            soundEffectPlayer?.release()
-            soundEffectPlayer = MediaPlayer.create(context, R.raw.environment_change)
-            soundEffectPlayer?.start()
-            soundEffectPlayer?.setOnCompletionListener { it.release() }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to play environment change sound")
-        }
-    }
+    fun playMissileLaunchSound() = playSoundEffect(R.raw.missile_launch)
+
+    fun playShootSound() = playSoundEffect(R.raw.shoot)
+
+    fun playLevelUpSound() = playSoundEffect(R.raw.level_up)
+
+    fun playEnvironmentChangeSound() = playSoundEffect(R.raw.environment_change)
+
+    fun playRotateSound() = playSoundEffect(R.raw.rotate_sound)
+
+    fun playSnapSound() = playSoundEffect(R.raw.snap_sound)
+
+    fun playSpaceworthySound() = playSoundEffect(R.raw.spaceworthy_sound)
+
+    fun playLaunchSound() = playSoundEffect(R.raw.launch_sound)
 
     fun onDestroy() {
-        soundEffectPlayer?.release()
-        soundEffectPlayer = null
+        soundPool.release()
+        soundEffectIds.clear()
         stopBackgroundMusic()
         backgroundMusicPlayer?.release()
         backgroundMusicPlayer = null

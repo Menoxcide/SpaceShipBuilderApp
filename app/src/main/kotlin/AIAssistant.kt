@@ -15,7 +15,8 @@ class AIAssistant @Inject constructor() {
         baseMessageDisplayDuration * 3 // 15 seconds for normal/low messages
     private val maxDisplayedMessages = 3
     private val bottomOffset = 100f // Offset to avoid overlap with destroy all button
-
+    private val messages = mutableListOf<String>()
+    private val maxMessages = 3 // Limit to 3 messages for display
     // AI "Memory" and State
     private data class PlayerMemory(
         var powerUpsCollected: Int = 0,
@@ -1066,6 +1067,14 @@ class AIAssistant @Inject constructor() {
 
     fun getDisplayedMessages(): List<String> {
         return displayedMessages.map { it.first }
+    }
+
+    fun addMessage(message: String) {
+        if (messages.size >= maxMessages) {
+            messages.removeAt(0) // Remove oldest message if at limit
+        }
+        messages.add(message)
+        Timber.d("AI Assistant message added: $message")
     }
 
     fun getBottomOffset(): Float {
