@@ -1,6 +1,12 @@
 package com.example.spaceshipbuilderapp
 
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.RectF
 import timber.log.Timber
 import javax.inject.Inject
 import kotlin.math.sin
@@ -16,27 +22,6 @@ class ShipRenderer @Inject constructor(
         style = Paint.Style.STROKE
         strokeWidth = 4f
         setShadowLayer(8f, 0f, 0f, Color.RED)
-    }
-    private val powerUpPaint = Paint().apply { isAntiAlias = true }
-    private val missileIndicatorPaint = Paint().apply { isAntiAlias = true; color = Color.YELLOW }
-    private val hpBarPaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.GREEN
-        style = Paint.Style.FILL
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
-    }
-    private val fuelBarPaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.BLUE
-        style = Paint.Style.FILL
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
-    }
-    private val barBorderPaint = Paint().apply {
-        isAntiAlias = true
-        color = Color.argb(200, 255, 255, 255)
-        style = Paint.Style.STROKE
-        strokeWidth = 2f
-        setShadowLayer(2f, 1f, 1f, Color.BLACK)
     }
 
     fun drawShip(
@@ -78,37 +63,6 @@ class ShipRenderer @Inject constructor(
                 canvas.drawRect(glowRect, glowPaint)
             }
 
-            val centerX = shipX
-            val centerY = shipY
-            val powerUpSprite = when {
-                gameEngine.shieldActive -> bitmapManager.getBitmap(R.drawable.shield_icon, "Shield")
-                gameEngine.speedBoostActive -> bitmapManager.getBitmap(R.drawable.speed_icon, "Speed")
-                gameEngine.stealthActive -> bitmapManager.getBitmap(R.drawable.stealth_icon, "Stealth")
-                gameEngine.invincibilityActive -> bitmapManager.getBitmap(R.drawable.invincibility_icon, "Invincibility")
-                else -> null
-            }
-            powerUpSprite?.let {
-                val spriteX = centerX - it.width / 2f
-                val spriteY = centerY - it.height / 2f
-                canvas.drawBitmap(it, spriteX, spriteY, powerUpPaint)
-            }
-
-            val totalMissiles = gameEngine.missileCount
-            val indicatorSize = 10f
-            val indicatorSpacing = 5f
-            val totalWidth = (indicatorSize + indicatorSpacing) * totalMissiles - indicatorSpacing
-            val indicatorXStart = shipX - totalWidth / 2f
-            val indicatorY = y - 20f
-            for (i in 0 until totalMissiles) {
-                missileIndicatorPaint.alpha = if (i < gameEngine.missileCount) 255 else 50
-                canvas.drawCircle(
-                    indicatorXStart + i * (indicatorSize + indicatorSpacing) + indicatorSize / 2f,
-                    indicatorY,
-                    indicatorSize / 2f,
-                    missileIndicatorPaint
-                )
-            }
-
             particleSystem.addPropulsionParticles(shipX, y + mergedShipBitmap.height, gameEngine.speedBoostActive)
             particleSystem.drawExhaustParticles(canvas)
             particleSystem.drawCollectionParticles(canvas)
@@ -120,23 +74,6 @@ class ShipRenderer @Inject constructor(
             particleSystem.drawScoreTextParticles(canvas)
             particleSystem.drawMissileExhaustParticles(canvas)
             particleSystem.drawSparkleParticles(canvas)
-
-            val barWidth = 8f
-            val offset = 2f
-            val fuelTankHeight = shipSet.fuelTank.height.toFloat()
-            val fuelTankTop = y + shipSet.cockpit.height
-            val fuelTankBottom = fuelTankTop + fuelTankHeight
-            val hpBarX = x - barWidth - offset
-            val fuelBarX = x + mergedShipBitmap.width + offset
-            val hpFraction = gameEngine.hp / gameEngine.maxHp
-            val fuelFraction = gameEngine.fuel / gameEngine.fuelCapacity
-            val hpFilledHeight = fuelTankHeight * hpFraction
-            val fuelFilledHeight = fuelTankHeight * fuelFraction
-
-            canvas.drawRect(hpBarX, fuelTankTop, hpBarX + barWidth, fuelTankBottom, barBorderPaint)
-            canvas.drawRect(fuelBarX, fuelTankTop, fuelBarX + barWidth, fuelTankBottom, barBorderPaint)
-            canvas.drawRect(hpBarX, fuelTankBottom - hpFilledHeight, hpBarX + barWidth, fuelTankBottom, hpBarPaint)
-            canvas.drawRect(fuelBarX, fuelTankBottom - fuelFilledHeight, fuelBarX + barWidth, fuelTankBottom, fuelBarPaint)
         } else if (gameState == GameState.BUILD && shipParts.isNotEmpty()) {
             val placeholderPositions = placeholders.associate { it.type to it.y }
             shipParts.sortedBy { it.y }.forEach { part ->

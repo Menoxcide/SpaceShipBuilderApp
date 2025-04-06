@@ -46,14 +46,13 @@ open class Asteroid(
     var y: Float,
     var size: Float,
     var rotation: Float = 120f,
-    var angularVelocity: Float = Random.nextFloat() * 6f - 3f, // Randomly select from -3 to 3 degrees per frame
-    val spriteId: Int = Random.nextInt(9) // Randomly select from 0 to 8 (9 asteroid sprites)
+    var angularVelocity: Float = Random.nextFloat() * 6f - 3f,
+    val spriteId: Int = Random.nextInt(9)
 ) {
     open fun update(screenWidth: Float, screenHeight: Float, level: Int) {
         val radius = screenWidth / 8f
         val angle = (System.currentTimeMillis() % 10000) / 10000f * 2 * Math.PI.toFloat()
-        // Adjust speed: start at 2 units per frame at level 1, increase to 10 units per frame by level 50
-        val speed = 2f + (8f * (level.toFloat() / 50f).coerceIn(0f, 1f)) // Linearly interpolate from 2 to 10
+        val speed = 2f + (8f * (level.toFloat() / 50f).coerceIn(0f, 1f))
         x += cos(angle) * speed
         y += sin(angle) * speed + speed
         rotation += angularVelocity
@@ -69,7 +68,7 @@ open class Asteroid(
             "rotation" to rotation,
             "angularVelocity" to angularVelocity,
             "isGiant" to false,
-            "spriteId" to spriteId // Serialize the spriteId
+            "spriteId" to spriteId
         )
     }
 
@@ -103,8 +102,8 @@ class GiantAsteroid(
     x: Float,
     y: Float,
     size: Float,
-    spriteId: Int = Random.nextInt(9) // Randomly select from 0 to 8
-) : Asteroid(x, y, size * FlightModeManager.GIANT_ASTEROID_SCALE, 0f, Random.nextFloat() * 4f - 2f, spriteId) { // Randomly select from -2 to 2 degrees per frame
+    spriteId: Int = Random.nextInt(9)
+) : Asteroid(x, y, size * FlightModeManager.GIANT_ASTEROID_SCALE, 0f, Random.nextFloat() * 4f - 2f, spriteId) {
     fun explode(gameObjectManager: GameObjectManager) {
         Timber.d("Giant asteroid exploded at (x=$x, y=$y)")
         gameObjectManager.renderer.shipRendererInstance.addExplosionParticles(x, y)
@@ -120,11 +119,11 @@ class GiantAsteroid(
         return mapOf(
             "x" to x,
             "y" to y,
-            "size" to size / FlightModeManager.GIANT_ASTEROID_SCALE, // Store the base size
+            "size" to size / FlightModeManager.GIANT_ASTEROID_SCALE,
             "rotation" to rotation,
             "angularVelocity" to angularVelocity,
             "isGiant" to true,
-            "spriteId" to spriteId // Serialize the spriteId
+            "spriteId" to spriteId
         )
     }
 }
@@ -138,7 +137,9 @@ open class Projectile(
     open var screenHeight: Float,
     open var screenWidth: Float,
     @Serializable(with = WeaponTypeSerializer::class)
-    open var weaponType: WeaponType = WeaponType.Default // Add weaponType property with serializer
+    open var weaponType: WeaponType = WeaponType.Default,
+    @Contextual
+    open var target: Any? = null
 ) {
     open fun update() {
         x += speedX
@@ -148,6 +149,25 @@ open class Projectile(
     open fun isOffScreen(): Boolean = y < -20f || y > screenHeight + 20f || x < -20f || x > screenWidth + 20f
 
     open fun toMap(): Map<String, Any> {
+        val localTarget = target
+        val targetData = when (localTarget) {
+            is EnemyShip -> mapOf(
+                "type" to "EnemyShip",
+                "x" to localTarget.x,
+                "y" to localTarget.y
+            )
+            is Asteroid -> mapOf(
+                "type" to "Asteroid",
+                "x" to localTarget.x,
+                "y" to localTarget.y
+            )
+            is BossShip -> mapOf(
+                "type" to "BossShip",
+                "x" to localTarget.x,
+                "y" to localTarget.y
+            )
+            else -> mapOf("type" to "None")
+        }
         return mapOf(
             "x" to x,
             "y" to y,
@@ -162,7 +182,8 @@ open class Projectile(
                 is HomingProjectile -> "HomingProjectile"
                 else -> "Projectile"
             },
-            "weaponType" to weaponType // Serialization handled by WeaponTypeSerializer
+            "weaponType" to weaponType,
+            "target" to targetData
         )
     }
 
@@ -184,13 +205,14 @@ open class Projectile(
                 "Laser" -> WeaponType.Laser
                 else -> WeaponType.Default
             }
+            val target = null // Target will be set by GameObjectManager
 
             return when (type) {
-                "PlasmaProjectile" -> PlasmaProjectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType)
-                "MissileProjectile" -> MissileProjectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType)
-                "LaserProjectile" -> LaserProjectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType)
-                "HomingProjectile" -> HomingProjectile.fromMap(map, null) // Will be handled by HomingProjectile's fromMap
-                else -> Projectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType)
+                "PlasmaProjectile" -> PlasmaProjectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType).apply { this.target = target }
+                "MissileProjectile" -> MissileProjectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType).apply { this.target = target }
+                "LaserProjectile" -> LaserProjectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType).apply { this.target = target }
+                "HomingProjectile" -> HomingProjectile.fromMap(map, null)
+                else -> Projectile(x, y, speedX, speedY, screenHeight, screenWidth, weaponType, target)
             }
         }
     }
@@ -268,7 +290,6 @@ open class EnemyShip(
     }
 }
 
-// New DroneEnemy subclass
 data class DroneEnemy(
     override var x: Float,
     override var y: Float,
@@ -276,7 +297,7 @@ data class DroneEnemy(
     override var health: Float = 10f,
     override var damage: Float = 10f,
     override var lastShotTime: Long = 0L,
-    override val shotInterval: Long = 3000L // Shoots more frequently
+    override val shotInterval: Long = 3000L
 ) : EnemyShip(x, y, speedY, health, damage, lastShotTime, shotInterval) {
     override fun toMap(): Map<String, Any> {
         return mapOf(
@@ -292,7 +313,6 @@ data class DroneEnemy(
     }
 }
 
-// New ArmoredEnemy subclass
 data class ArmoredEnemy(
     override var x: Float,
     override var y: Float,
@@ -300,7 +320,7 @@ data class ArmoredEnemy(
     override var health: Float = 50f,
     override var damage: Float = 30f,
     override var lastShotTime: Long = 0L,
-    override val shotInterval: Long = 5000L // Shoots less frequently
+    override val shotInterval: Long = 5000L
 ) : EnemyShip(x, y, speedY, health, damage, lastShotTime, shotInterval) {
     override fun toMap(): Map<String, Any> {
         return mapOf(
@@ -359,7 +379,7 @@ data class BossShip(
                     gameObjectManager.currentProjectileSpeed,
                     gameObjectManager.screenHeight,
                     gameObjectManager.screenWidth,
-                    WeaponType.Default // Default weapon type for enemy projectiles
+                    WeaponType.Default
                 )
             )
             lastShotTime = currentTime
@@ -405,17 +425,16 @@ data class BossShip(
 
 @Serializable
 data class HomingProjectile(
-    @Contextual
-    val target: Any?,
     var hasHit: Boolean = false
 ) : Projectile(
-    x = 0f, // These will be set via fromMap or constructor
+    x = 0f,
     y = 0f,
     speedX = 0f,
     speedY = 0f,
     screenHeight = 0f,
     screenWidth = 0f,
-    weaponType = WeaponType.HomingMissile // Default to HomingMissile
+    weaponType = WeaponType.HomingMissile,
+    target = null // Initial target set here, can be reassigned later
 ) {
     private val speed = 15f
 
@@ -426,9 +445,10 @@ data class HomingProjectile(
     fun update(gameObjectManager: GameObjectManager, currentTime: Long) {
         if (!isTargetValid(gameObjectManager)) return
 
-        val (targetX, targetY) = when (target) {
-            is EnemyShip -> Pair(target.x, target.y)
-            is BossShip -> Pair(target.x, target.y)
+        val localTarget = target
+        val (targetX, targetY) = when (localTarget) {
+            is EnemyShip -> Pair(localTarget.x, localTarget.y)
+            is BossShip -> Pair(localTarget.x, localTarget.y)
             else -> return
         }
         val dx = targetX - x
@@ -470,16 +490,17 @@ data class HomingProjectile(
     }
 
     override fun toMap(): Map<String, Any> {
-        val targetData = when (target) {
+        val localTarget = target
+        val targetData = when (localTarget) {
             is EnemyShip -> mapOf(
                 "type" to "EnemyShip",
-                "x" to target.x,
-                "y" to target.y
+                "x" to localTarget.x,
+                "y" to localTarget.y
             )
             is BossShip -> mapOf(
                 "type" to "BossShip",
-                "x" to target.x,
-                "y" to target.y
+                "x" to localTarget.x,
+                "y" to localTarget.y
             )
             else -> mapOf("type" to "Unknown")
         }
@@ -490,7 +511,7 @@ data class HomingProjectile(
             "screenHeight" to screenHeight,
             "screenWidth" to screenWidth,
             "hasHit" to hasHit,
-            "weaponType" to weaponType // Serialization handled by WeaponTypeSerializer
+            "weaponType" to weaponType
         )
     }
 
@@ -512,7 +533,7 @@ data class HomingProjectile(
                 "Missile" -> WeaponType.Missile
                 "HomingMissile" -> WeaponType.HomingMissile
                 "Laser" -> WeaponType.Laser
-                else -> WeaponType.HomingMissile // Default to HomingMissile for HomingProjectile
+                else -> WeaponType.HomingMissile
             }
 
             val target = if (gameObjectManager != null) {
@@ -524,23 +545,23 @@ data class HomingProjectile(
                     }
                     "BossShip" -> gameObjectManager.getBoss()
                     else -> null
-                } ?: gameObjectManager.enemyShips.firstOrNull() // Fallback to first enemy ship if target not found
+                } ?: gameObjectManager.enemyShips.firstOrNull()
             } else {
-                null // Fallback if gameObjectManager is null
+                null
             }
 
-            return HomingProjectile(target, hasHit).apply {
+            return HomingProjectile(hasHit).apply {
                 this.x = x
                 this.y = y
                 this.screenHeight = screenHeight
                 this.screenWidth = screenWidth
                 this.weaponType = weaponType
+                this.target = target // Use inherited target property
             }
         }
     }
 }
 
-// Custom serializer for WeaponType
 object WeaponTypeSerializer : KSerializer<WeaponType> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("WeaponType", PrimitiveKind.STRING)
 
@@ -563,7 +584,7 @@ object WeaponTypeSerializer : KSerializer<WeaponType> {
             "Missile" -> WeaponType.Missile
             "HomingMissile" -> WeaponType.HomingMissile
             "Laser" -> WeaponType.Laser
-            else -> WeaponType.Default // Fallback to Default if unknown
+            else -> WeaponType.Default
         }
     }
 }

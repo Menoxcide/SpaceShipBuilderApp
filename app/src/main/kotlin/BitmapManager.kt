@@ -12,7 +12,7 @@ import javax.inject.Inject
 import kotlin.random.Random
 
 class BitmapManager @Inject constructor(
-    private val context: Context
+    internal val context: Context
 ) {
     private val bitmaps: MutableMap<Int, Bitmap> = mutableMapOf()
     private val shipSets: MutableList<ShipSet> = mutableListOf()

@@ -265,7 +265,7 @@ class GameObjectRenderer @Inject constructor(
                 val scale = PROJECTILE_SIZE / bitmap.width.toFloat()
                 val scaledWidth = bitmap.width * scale
                 val scaledHeight = bitmap.height * scale
-                val angle = atan2(projectile.speedY, projectile.speedX) * 180 / Math.PI.toFloat() + 90
+                val angle = atan2(projectile.speedY, projectile.speedX) * 180 / Math.PI.toFloat() + 90 // Rotate based on heading
                 canvas.save()
                 canvas.translate(projectile.x - scaledWidth / 2f, projectile.y - scaledHeight / 2f + statusBarHeight)
                 canvas.rotate(angle, scaledWidth / 2f, scaledHeight / 2f)

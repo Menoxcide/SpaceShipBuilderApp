@@ -42,7 +42,7 @@ class FlightModeManager @Inject constructor(
     var distanceTraveled = 0f
     var longestDistanceTraveled = 0f
     private var sessionDistanceTraveled = 0f
-    private val distancePerLevel: Float = DISTANCE_PER_LEVEL // Expose as property
+    private val distancePerLevel: Float = DISTANCE_PER_LEVEL
     var levelUpAnimationStartTime = 0L
 
     private var lastScoreUpdateTime = System.currentTimeMillis()
@@ -50,6 +50,9 @@ class FlightModeManager @Inject constructor(
     private var lastBossCollisionDamageTime = 0L
 
     private var userId: String = "default_user"
+
+    private var lastHomingMissileTime: Long = 0L
+    private val homingMissileCooldown: Long = 500L // Updated to 500ms cooldown
 
     enum class Environment {
         NORMAL,
@@ -75,7 +78,7 @@ class FlightModeManager @Inject constructor(
         const val BOSS_SHOT_INTERVAL = 2000L
         const val BOSS_MOVEMENT_INTERVAL = 1000L
         const val BOSS_COLLISION_DAMAGE_PER_SECOND = 50f
-        const val DISTANCE_PER_LEVEL = 100f // Renamed for clarity
+        const val DISTANCE_PER_LEVEL = 100f
     }
 
     fun setScreenDimensions(width: Float, height: Float, statusBarHeight: Float) {
@@ -501,22 +504,25 @@ class FlightModeManager @Inject constructor(
     }
 
     fun launchHomingMissile(target: Any) {
-        if (shipManager.missileCount > 0 && gameStateManager.gameState == GameState.FLIGHT) {
+        val currentTime = System.currentTimeMillis()
+        if (shipManager.missileCount > 0 && currentTime - lastHomingMissileTime >= homingMissileCooldown && gameStateManager.gameState == GameState.FLIGHT) {
             val projectileX = shipManager.shipX
             val projectileY = shipManager.shipY - (shipManager.mergedShipBitmap?.height ?: 0) / 2f
-            val homingProjectile = HomingProjectile(target).apply {
+            val homingProjectile = HomingProjectile().apply { // No target in constructor, set it after
                 this.x = projectileX
                 this.y = projectileY
                 this.screenHeight = shipManager.screenHeight
                 this.screenWidth = shipManager.screenWidth
                 this.weaponType = WeaponType.HomingMissile
+                this.target = target // Set the inherited target property
             }
             gameObjectManager.homingProjectiles.add(homingProjectile)
             shipManager.missileCount--
+            lastHomingMissileTime = currentTime // Update last launch time
             audioManager.playMissileLaunchSound()
             Timber.d("Launched homing missile towards target. Remaining missiles: ${shipManager.missileCount}")
         } else {
-            Timber.d("Cannot launch missile: count=${shipManager.missileCount}, gameState=${gameStateManager.gameState}")
+            Timber.d("Cannot launch missile: count=${shipManager.missileCount}, gameState=${gameStateManager.gameState}, timeSinceLast=${currentTime - lastHomingMissileTime}ms")
         }
     }
 

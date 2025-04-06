@@ -13,33 +13,52 @@ class PowerUpManager @Inject constructor() {
     var invincibilityActive = false
     private var invincibilityEndTime = 0L
 
-    // Make effectDuration a variable with a default base value, accessible publicly
     var effectDuration = 10000L // Base duration of 10 seconds
 
     fun applyPowerUpEffect(powerUpType: String, shipManager: ShipManager) {
         val currentTime = System.currentTimeMillis()
         when (powerUpType) {
             "shield" -> {
-                shieldActive = true
+                if (!shieldActive) {
+                    // Apply effect only if not already active
+                    shieldActive = true
+                    shipManager.currentFuelConsumption = shipManager.baseFuelConsumption / 2f
+                    Timber.d("Applied shield power-up effect, fuel consumption halved to ${shipManager.currentFuelConsumption}")
+                }
+                // Refresh or set duration
                 shieldEndTime = currentTime + effectDuration
-                shipManager.currentFuelConsumption = shipManager.currentFuelConsumption / 2f
-                Timber.d("Collected shield power-up, duration: $effectDuration ms")
+                Timber.d("Collected shield power-up, duration refreshed to $effectDuration ms, endTime=$shieldEndTime")
             }
             "speed" -> {
-                speedBoostActive = true
+                if (!speedBoostActive) {
+                    // Apply effect only if not already active
+                    speedBoostActive = true
+                    shipManager.currentSpeed = shipManager.baseSpeed * 5f
+                    Timber.d("Applied speed boost power-up effect, speed increased to ${shipManager.currentSpeed}")
+                }
+                // Refresh or set duration
                 speedBoostEndTime = currentTime + effectDuration
-                shipManager.currentSpeed = shipManager.currentSpeed * 5f
-                Timber.d("Collected speed boost power-up, duration: $effectDuration ms")
+                Timber.d("Collected speed boost power-up, duration refreshed to $effectDuration ms, endTime=$speedBoostEndTime")
             }
             "stealth" -> {
-                stealthActive = true
+                if (!stealthActive) {
+                    // Apply effect only if not already active
+                    stealthActive = true
+                    Timber.d("Applied stealth power-up effect")
+                }
+                // Refresh or set duration
                 stealthEndTime = currentTime + effectDuration
-                Timber.d("Collected stealth power-up, duration: $effectDuration ms")
+                Timber.d("Collected stealth power-up, duration refreshed to $effectDuration ms, endTime=$stealthEndTime")
             }
             "invincibility" -> {
-                invincibilityActive = true
+                if (!invincibilityActive) {
+                    // Apply effect only if not already active
+                    invincibilityActive = true
+                    Timber.d("Applied invincibility power-up effect")
+                }
+                // Refresh or set duration
                 invincibilityEndTime = currentTime + effectDuration
-                Timber.d("Collected invincibility power-up, duration: $effectDuration ms")
+                Timber.d("Collected invincibility power-up, duration refreshed to $effectDuration ms, endTime=$invincibilityEndTime")
             }
         }
     }
@@ -49,12 +68,12 @@ class PowerUpManager @Inject constructor() {
         if (shieldActive && currentTime > shieldEndTime) {
             shieldActive = false
             shipManager.currentFuelConsumption = shipManager.baseFuelConsumption
-            Timber.d("Shield effect ended")
+            Timber.d("Shield effect ended, fuel consumption reset to ${shipManager.currentFuelConsumption}")
         }
         if (speedBoostActive && currentTime > speedBoostEndTime) {
             speedBoostActive = false
             shipManager.currentSpeed = shipManager.baseSpeed
-            Timber.d("Speed boost ended")
+            Timber.d("Speed boost ended, speed reset to ${shipManager.currentSpeed}")
         }
         if (stealthActive && currentTime > stealthEndTime) {
             stealthActive = false
@@ -93,5 +112,22 @@ class PowerUpManager @Inject constructor() {
     fun getInvincibilityEndTime(): Long = invincibilityEndTime
     fun setInvincibilityEndTime(time: Long) {
         invincibilityEndTime = time
+    }
+
+    // Methods to get remaining duration
+    fun getShieldRemainingDuration(currentTime: Long): Long {
+        return if (shieldActive) (shieldEndTime - currentTime).coerceAtLeast(0L) else 0L
+    }
+
+    fun getSpeedBoostRemainingDuration(currentTime: Long): Long {
+        return if (speedBoostActive) (speedBoostEndTime - currentTime).coerceAtLeast(0L) else 0L
+    }
+
+    fun getStealthRemainingDuration(currentTime: Long): Long {
+        return if (stealthActive) (stealthEndTime - currentTime).coerceAtLeast(0L) else 0L
+    }
+
+    fun getInvincibilityRemainingDuration(currentTime: Long): Long {
+        return if (invincibilityActive) (invincibilityEndTime - currentTime).coerceAtLeast(0L) else 0L
     }
 }

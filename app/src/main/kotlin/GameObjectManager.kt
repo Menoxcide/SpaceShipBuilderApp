@@ -37,8 +37,8 @@ class GameObjectManager @Inject constructor(
 
     companion object {
         const val BASE_MAX_ASTEROIDS = 5
-        const val AIM_ASSIST_RANGE = 200f // Range within which aim assist activates
-        const val AIM_ASSIST_STRENGTH = 0.1f // Strength of the trajectory adjustment
+        const val AIM_ASSIST_RANGE = 200f
+        const val AIM_ASSIST_STRENGTH = 0.5f
     }
 
     fun getBoss(): BossShip? = boss
@@ -227,7 +227,7 @@ class GameObjectManager @Inject constructor(
         powerUps.forEach { it.update(screenHeight) }
         projectiles.forEach { projectile ->
             projectile.update()
-            if (projectile !is HomingProjectile) { // Exclude homing missiles from aim assist
+            if (projectile !is HomingProjectile) {
                 applyAimAssist(projectile, shipX, shipY)
             }
         }
@@ -255,40 +255,85 @@ class GameObjectManager @Inject constructor(
     }
 
     private fun applyAimAssist(projectile: Projectile, shipX: Float, shipY: Float) {
-        val targets = mutableListOf<Pair<Float, Float>>()
-        enemyShips.forEach { targets.add(it.x to it.y) }
-        asteroids.forEach { targets.add(it.x to it.y) }
-        boss?.let { targets.add(it.x to it.y) }
+        if (projectile is HomingProjectile) return // Skip homing missiles
 
-        var nearestTarget: Pair<Float, Float>? = null
-        var minDistance = AIM_ASSIST_RANGE.toFloat()
-
-        targets.forEach { (targetX, targetY) ->
-            val distance = kotlin.math.hypot(projectile.x - targetX, projectile.y - targetY)
-            if (distance < minDistance) {
-                minDistance = distance
-                nearestTarget = targetX to targetY
+        // Validate existing target
+        projectile.target?.let { target ->
+            val isValidTarget = when (target) {
+                is EnemyShip -> enemyShips.contains(target)
+                is Asteroid -> asteroids.contains(target)
+                is BossShip -> boss == target
+                else -> false
+            }
+            if (!isValidTarget) {
+                projectile.target = null // Clear invalid target
+                Timber.d("Cleared invalid target from projectile at (${projectile.x}, ${projectile.y})")
+            } else {
+                val (targetX, targetY) = when (target) {
+                    is EnemyShip -> Pair(target.x, target.y)
+                    is Asteroid -> Pair(target.x, target.y)
+                    is BossShip -> Pair(target.x, target.y)
+                    else -> return
+                }
+                val dx = targetX - projectile.x
+                val dy = targetY - projectile.y
+                val distance = kotlin.math.hypot(dx, dy)
+                if (distance > 0) {
+                    val adjustX = (dx / distance) * AIM_ASSIST_STRENGTH * currentProjectileSpeed
+                    val adjustY = (dy / distance) * AIM_ASSIST_STRENGTH * currentProjectileSpeed
+                    projectile.speedX = (projectile.speedX + adjustX).coerceIn(-currentProjectileSpeed, currentProjectileSpeed)
+                    projectile.speedY = (projectile.speedY + adjustY).coerceIn(-currentProjectileSpeed, currentProjectileSpeed)
+                    val speedMagnitude = kotlin.math.hypot(projectile.speedX, projectile.speedY)
+                    if (speedMagnitude > 0) {
+                        projectile.speedX = (projectile.speedX / speedMagnitude) * currentProjectileSpeed
+                        projectile.speedY = (projectile.speedY / speedMagnitude) * currentProjectileSpeed
+                    }
+                }
+                return
             }
         }
 
-        nearestTarget?.let { (targetX, targetY) ->
+        // Find nearest on-screen target if no valid target is set
+        val targets = mutableListOf<Pair<Any, Pair<Float, Float>>>()
+        enemyShips.forEach { if (!it.isOffScreen()) targets.add(it to (it.x to it.y)) }
+        asteroids.forEach { if (!it.isOffScreen(screenHeight, screenWidth)) targets.add(it to (it.x to it.y)) }
+        boss?.let { if (!it.isOffScreen()) targets.add(it to (it.x to it.y)) }
+
+        var nearestTarget: Pair<Any, Pair<Float, Float>>? = null
+        var minDistance = AIM_ASSIST_RANGE.toFloat()
+
+        targets.forEach { (obj, pos) ->
+            val (targetX, targetY) = pos
+            val distance = kotlin.math.hypot(projectile.x - targetX, projectile.y - targetY)
+            if (distance < minDistance) {
+                minDistance = distance
+                nearestTarget = obj to (targetX to targetY)
+            }
+        }
+
+        nearestTarget?.let { (targetObj, pos) ->
+            projectile.target = targetObj // Lock onto this target
+            val (targetX, targetY) = pos
             val dx = targetX - projectile.x
             val dy = targetY - projectile.y
             val distance = kotlin.math.hypot(dx, dy)
             if (distance > 0) {
                 val adjustX = (dx / distance) * AIM_ASSIST_STRENGTH * currentProjectileSpeed
                 val adjustY = (dy / distance) * AIM_ASSIST_STRENGTH * currentProjectileSpeed
-                projectile.speedX += adjustX
-                projectile.speedY += adjustY
-                // Normalize speed to maintain original magnitude
+                projectile.speedX = (projectile.speedX + adjustX).coerceIn(-currentProjectileSpeed, currentProjectileSpeed)
+                projectile.speedY = (projectile.speedY + adjustY).coerceIn(-currentProjectileSpeed, currentProjectileSpeed)
                 val speedMagnitude = kotlin.math.hypot(projectile.speedX, projectile.speedY)
                 if (speedMagnitude > 0) {
                     projectile.speedX = (projectile.speedX / speedMagnitude) * currentProjectileSpeed
                     projectile.speedY = (projectile.speedY / speedMagnitude) * currentProjectileSpeed
                 }
             }
+            Timber.d("Projectile locked onto target at ($targetX, $targetY), type=${targetObj.javaClass.simpleName}")
         }
     }
+
+    private fun EnemyShip.isOffScreen(): Boolean = y > screenHeight + 50f || y < -50f || x < -50f || x > screenWidth + 50f
+    private fun BossShip.isOffScreen(): Boolean = y > screenHeight + 75f || y < -75f || x < -75f || x > screenWidth + 75f
 
     fun clearGameObjects() {
         powerUps.clear()
@@ -306,7 +351,7 @@ class GameObjectManager @Inject constructor(
         asteroids.removeAll { it.isOffScreen(screenHeight, screenWidth) }
         projectiles.removeAll { it.isOffScreen() }
         enemyProjectiles.removeAll { it.isOffScreen() }
-        enemyShips.removeAll { it.y > screenHeight + 50f }
+        enemyShips.removeAll { it.isOffScreen() }
         homingProjectiles.removeAll { projectile ->
             projectile.isOffScreen() || projectile.hasHitTarget() || !projectile.isTargetValid(this)
         }

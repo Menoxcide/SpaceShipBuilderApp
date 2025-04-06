@@ -1,9 +1,9 @@
 package com.example.spaceshipbuilderapp
 
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
@@ -84,6 +84,18 @@ class FlightView @Inject constructor(
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
+    private val powerUpCooldownPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.argb(128, 255, 255, 255)
+        style = Paint.Style.FILL
+    }
+    private val powerUpCooldownBorderPaint = Paint().apply {
+        isAntiAlias = true
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    private val missileIndicatorPaint = Paint().apply { isAntiAlias = true }
 
     private val robotPaint = Paint().apply {
         isAntiAlias = true
@@ -123,6 +135,18 @@ class FlightView @Inject constructor(
     private var pauseButtonVisible: Boolean = false
     private var destroyAllButtonVisible: Boolean = false
     private var destroyAllButtonEnabled: Boolean = false
+
+    private val powerUpBitmaps = mapOf(
+        "shield" to BitmapFactory.decodeResource(context.resources, R.drawable.shield_icon),
+        "speed" to BitmapFactory.decodeResource(context.resources, R.drawable.speed_icon),
+        "stealth" to BitmapFactory.decodeResource(context.resources, R.drawable.stealth_icon),
+        "invincibility" to BitmapFactory.decodeResource(context.resources, R.drawable.invincibility_icon)
+    )
+    private val missileSprite: Bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.homing_missile).let {
+        val scaleHeight = 32f
+        val aspectRatio = it.width.toFloat() / it.height.toFloat()
+        Bitmap.createScaledBitmap(it, (scaleHeight * aspectRatio).toInt(), scaleHeight.toInt(), true)
+    }
 
     init {
         setWillNotDraw(false)
@@ -275,7 +299,7 @@ class FlightView @Inject constructor(
 
         renderer.drawPowerUps(canvas, gameEngine.powerUps, statusBarHeight)
         renderer.drawAsteroids(canvas, gameEngine.asteroids, statusBarHeight)
-        renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight) // Trails are drawn within this method before projectiles
+        renderer.drawProjectiles(canvas, gameEngine.projectiles, statusBarHeight)
         renderer.drawEnemyShips(canvas, gameEngine.enemyShips, statusBarHeight)
         renderer.drawBoss(canvas, gameEngine.getBoss(), statusBarHeight)
         renderer.drawEnemyProjectiles(canvas, gameEngine.enemyProjectiles, statusBarHeight)
@@ -296,6 +320,7 @@ class FlightView @Inject constructor(
             canvas.drawRect(0f, 0f, screenWidth, screenHeight, warningPaint)
         }
 
+        // HUD rendering
         val hudMargin = 50f
         val barWidth = 150f
         val barHeight = 20f
@@ -303,6 +328,10 @@ class FlightView @Inject constructor(
         val barSpacing = 10f
         val buttonSize = 64f
         val buttonSpacing = 10f
+        val powerUpSize = 64f
+        val powerUpSpacing = 10f
+        val missileSize = missileSprite.width.toFloat()
+        val missileSpacing = 5f
 
         val hpBarTop = statusBarHeight + hudMargin + 20f
         val hpBarLeft = hudMargin
@@ -323,8 +352,52 @@ class FlightView @Inject constructor(
         canvas.drawRect(hpBarLeft, fuelBarTop, hpBarLeft + fuelBarFilledWidth, fuelBarTop + barHeight, hudBarPaint)
         canvas.drawRect(hpBarLeft, fuelBarTop, hpBarLeft + barWidth, fuelBarTop + barHeight, hudBorderPaint)
 
-        val missileTextTop = fuelBarTop + barHeight + barSpacing + textOffset
-        canvas.drawText("Missiles: ${gameEngine.missileCount}/${gameEngine.maxMissiles}", hpBarLeft, missileTextTop, hudPaint)
+        // Missile indicator
+        val missileTop = fuelBarTop + barHeight + barSpacing + textOffset
+        val totalMissiles = gameEngine.maxMissiles
+        val totalMissileWidth = totalMissiles * missileSize + (totalMissiles - 1) * missileSpacing
+        val missileXStart = hpBarLeft // Align with HP/Fuel text
+        for (i in 0 until totalMissiles) {
+            missileIndicatorPaint.alpha = if (i < gameEngine.missileCount) 255 else 50
+            val missileX = missileXStart + i * (missileSize + missileSpacing)
+            canvas.drawBitmap(missileSprite, missileX, missileTop, missileIndicatorPaint)
+        }
+
+        // Power-up indicators
+        val powerUpTop = missileTop + missileSprite.height + barSpacing
+        val activePowerUps = mutableListOf<Pair<String, Long>>()
+        if (gameEngine.shieldActive) activePowerUps.add("shield" to flightModeManager.powerUpManager.getShieldRemainingDuration(currentTime))
+        if (gameEngine.speedBoostActive) activePowerUps.add("speed" to flightModeManager.powerUpManager.getSpeedBoostRemainingDuration(currentTime))
+        if (gameEngine.stealthActive) activePowerUps.add("stealth" to flightModeManager.powerUpManager.getStealthRemainingDuration(currentTime))
+        if (gameEngine.invincibilityActive) activePowerUps.add("invincibility" to flightModeManager.powerUpManager.getInvincibilityRemainingDuration(currentTime))
+
+        var powerUpX = hpBarLeft // Align with HP/Fuel/Missile left margin
+
+        activePowerUps.forEach { (type, remainingDuration) ->
+            val bitmap = powerUpBitmaps[type]
+            if (bitmap != null && !bitmap.isRecycled) {
+                val scaledBitmap = Bitmap.createScaledBitmap(bitmap, powerUpSize.toInt(), powerUpSize.toInt(), true)
+                canvas.drawBitmap(scaledBitmap, powerUpX, powerUpTop, null)
+
+                val fractionRemaining = (remainingDuration.toFloat() / flightModeManager.powerUpManager.effectDuration).coerceIn(0f, 1f)
+                if (fractionRemaining > 0f) {
+                    val centerX = powerUpX + powerUpSize / 2f
+                    val centerY = powerUpTop + powerUpSize / 2f
+                    val radius = powerUpSize / 2f
+                    val sweepAngle = 360f * fractionRemaining
+                    val cooldownPath = Path().apply {
+                        addArc(
+                            RectF(centerX - radius, centerY - radius, centerX + radius, centerY + radius),
+                            -90f,
+                            -sweepAngle
+                        )
+                    }
+                    canvas.drawPath(cooldownPath, powerUpCooldownPaint)
+                    canvas.drawCircle(centerX, centerY, radius, powerUpCooldownBorderPaint)
+                }
+                powerUpX += powerUpSize + powerUpSpacing
+            }
+        }
 
         val rightTextX = screenWidth - hudMargin - 150f
         val rightHudTop = statusBarHeight + hudMargin + 20f
@@ -625,6 +698,7 @@ class FlightView @Inject constructor(
         pauseButtonBitmap = null
         destroyAllButtonBitmap?.recycle()
         destroyAllButtonBitmap = null
+        missileSprite.recycle()
         if (BuildConfig.DEBUG) Timber.d("FlightView detached from window")
     }
 }

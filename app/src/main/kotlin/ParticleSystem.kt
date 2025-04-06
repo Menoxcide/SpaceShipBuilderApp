@@ -251,7 +251,7 @@ class ParticleSystem(private val context: Context) {
         val speedMultiplier = if (speedBoostActive) 5f else 1f
         addExhaustParticle(
             x, y,
-            Random.nextFloat() * 2f * speedMultiplier - 1f * speedMultiplier,
+            Random.nextFloat() * 2f - 1f * speedMultiplier, // Adjusted to ensure symmetry around center
             Random.nextFloat() * 5f * speedMultiplier + 5f * speedMultiplier
         )
     }
@@ -428,8 +428,8 @@ class ParticleSystem(private val context: Context) {
                 set(colorScale)
             })
             canvas.withSave {
-                translate(particle.x, particle.y)
-                scale(particle.life, particle.life, EXHAUST_WIDTH / 2, EXHAUST_HEIGHT / 2)
+                translate(particle.x - EXHAUST_WIDTH / 2f, particle.y - EXHAUST_HEIGHT / 2f) // Center the bitmap
+                scale(particle.life, particle.life)
                 drawBitmap(exhaustBitmap, 0f, 0f, exhaustPaint)
             }
             if (particle.isDead()) particlesToRemove.add(particle)
@@ -474,7 +474,7 @@ class ParticleSystem(private val context: Context) {
             canvas.drawCircle(particle.x, particle.y, particle.size, collisionPaint)
             if (particle.isDead()) particlesToRemove.add(particle)
         }
-        collisionParticles.removeAll(particlesToRemove) // Fixed typo: changed collectionParticles to collisionParticles
+        collisionParticles.removeAll(particlesToRemove)
         Timber.d("Drawing ${collisionParticles.size} collision particles")
     }
 
